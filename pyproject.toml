@@ -58,7 +58,7 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "C4", "RUF"]
-ignore = ["B008"]  # FastAPI Depends 入参风格
+ignore = ["B008", "RUF001", "RUF002", "RUF003"]  # B008=FastAPI Depends；RUF=中文全角标点是有意使用
 
 [tool.mypy]
 python_version = "3.13"
