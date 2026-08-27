@@ -1,0 +1,9 @@
+# 默认负责人（替换为实际 GitHub 用户名或团队）
+* @your-github-username
+
+# 安全红线相关代码必须有人 review
+src/care_lifeline/safety/ @your-github-username
+src/care_lifeline/api/ @your-github-username
+
+# 设计文档变更需过 review
+docs/system-design.md @your-github-username

@@ -1,0 +1,17 @@
+:root {
+  --brand-500: #3370ff; /* 飞书蓝系，主操作 */
+  --brand-100: #e8f3ff; /* 选中背景 */
+  --success: #00b42a; /* 正常/低危 */
+  --danger: #f53f3f; /* 异常/高危（医疗语境红=危险） */
+  --warning: #ff7d00; /* 中危/待复核 */
+  --bg-page: #f7f8fa; /* 页面浅灰底 */
+  --bg-card: #ffffff;
+  --text-1: #1d2129;
+  --text-2: #4e5969;
+  --text-3: #86909c;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    "Helvetica Neue", Arial, sans-serif;
+}
