@@ -55,3 +55,4 @@
 | 2026-08-28 | TestClient 下 LangGraph checkpointer 与异步 SQLAlchemy 死锁 | M2-4 会话持久化 |
 | 2026-08-28 | M3 零依赖 RAG + 确定性报告解析 + 慢病记忆 | M3 |
 | 2026-08-28 | M4 HITL 工作台闭环 + 反馈转评测数据集（防泄漏） | M4 |
+| 2026-08-28 | M5 评测基线 + CI 回归 + Docker 全栈部署 | M5 |
