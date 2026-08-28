@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "langgraph>=0.2",
+    "langgraph-checkpoint-sqlite>=2.0",
+    "langgraph-checkpoint-postgres>=2.0",
     "langchain>=0.3",
     "langchain-openai>=0.2",
     "fastapi>=0.115",
@@ -15,14 +17,18 @@ dependencies = [
     "qdrant-client>=1.12",
     "sentence-transformers>=3.1",
     "psycopg[binary]>=3.2",
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",
     "ragas>=0.2",
     "deepeval>=0.0",
     "python-multipart",
+    "pyjwt>=2.9",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
+    "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "mypy>=1.11",
@@ -42,6 +48,7 @@ package = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+asyncio_mode = "auto"
 # 覆盖率门禁：质控规则模块必须 100%
 [tool.coverage.run]
 source = ["src/care_lifeline"]

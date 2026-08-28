@@ -21,9 +21,12 @@ class Settings(BaseSettings):
     )
 
     llm_mode: Literal["mock", "real"] = "mock"
-    database_url: str = "postgresql://care:care@localhost:5432/care"
+    database_url: str = "sqlite+aiosqlite:///./care.db"
     qc_risk_threshold: float = Field(default=0.75, gt=0.0, le=1.0)
     api_port: int = 8000
+    jwt_secret: str = "dev-insecure-secret-change-me-please-rotate-in-prod"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
 
 
 @lru_cache

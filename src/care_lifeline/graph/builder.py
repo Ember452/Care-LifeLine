@@ -19,10 +19,11 @@ def _route_after_router(state: AgentState) -> str:
     return "triage"
 
 
-def build_graph(provider: LLMProvider | None = None):
-    """Build the minimal triage graph (M1).
+def build_graph(provider: LLMProvider | None = None, checkpointer=None):
+    """Build the minimal triage graph (M1+).
 
     ``provider`` defaults to the configured mode (mock in tests/CI).
+    ``checkpointer`` enables cross-request conversation recovery (M2-4).
     """
     resolved = provider or make_provider()
     graph = StateGraph(AgentState)
@@ -46,4 +47,4 @@ def build_graph(provider: LLMProvider | None = None):
     graph.add_edge("qc", "responder")
     graph.add_edge("responder", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
