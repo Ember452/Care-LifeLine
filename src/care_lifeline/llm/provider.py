@@ -1,18 +1,25 @@
 from collections.abc import Iterator
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from care_lifeline.config import Settings, get_settings
+
+# 模型分层：fast 走轻量模型（分类/分诊），strong 走旗舰模型（解读/质控）。
+ModelTier = Literal["fast", "strong"]
 
 
 @runtime_checkable
 class LLMProvider(Protocol):
     """Unified LLM interface for the dual-mode (mock / real) backend."""
 
-    def complete(self, *, messages: list[dict], temperature: float = 0.2) -> str:
+    def complete(
+        self, *, messages: list[dict], temperature: float = 0.2, tier: ModelTier = "strong"
+    ) -> str:
         """Return a single completion for the given chat messages."""
         ...
 
-    def stream(self, *, messages: list[dict], temperature: float = 0.2) -> "Iterator[str]":
+    def stream(
+        self, *, messages: list[dict], temperature: float = 0.2, tier: ModelTier = "strong"
+    ) -> "Iterator[str]":
         """Yield incremental completion chunks for the given chat messages."""
         ...
 

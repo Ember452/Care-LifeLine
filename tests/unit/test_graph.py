@@ -11,10 +11,15 @@ def _initial_state(text: str) -> AgentState:
         "patient_id": None,
         "intent": "",
         "risk_level": "routine",
+        "scope_result": None,
         "citations": [],
         "draft": "",
-        "qc_result": None,  # type: ignore[arg-type]
+        "qc_result": None,  # type: ignore[typeddict-item]
         "hitl_required": False,
+        "report": None,
+        "medication_warnings": [],
+        "retry_count": 0,
+        "memory_context": "",
     }
 
 
@@ -33,3 +38,12 @@ def test_emergency_triggers_hitl() -> None:
 
     assert result["hitl_required"] is True
     assert result["qc_result"].status == "hitl"
+
+
+def test_out_of_scope_is_refused() -> None:
+    graph = build_graph(MockProvider())
+    result = graph.invoke(_initial_state("帮我用 Python 实现快速排序"))
+
+    assert result["intent"] == "refuse"
+    assert result["qc_result"].status == "refused"
+    assert result["scope_result"].verdict == "out_of_scope"

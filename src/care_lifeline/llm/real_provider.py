@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from pydantic import SecretStr
 
 from care_lifeline.config import Settings
+from care_lifeline.llm.provider import ModelTier
 
 
 def _to_lc_messages(messages: list[dict]) -> list[BaseMessage]:
@@ -48,11 +49,19 @@ class RealProvider:
         self._mini = ChatOpenAI(model=settings.llm_model_mini, **common)
         self._flagship = ChatOpenAI(model=settings.llm_model, **common)
 
-    def complete(self, *, messages: list[dict], temperature: float = 0.2) -> str:
-        response = self._flagship.invoke(_to_lc_messages(messages))
+    def _client(self, tier: ModelTier):
+        """按分层返回模型客户端：fast 走 mini（分类/分诊），strong 走旗舰（解读/质控）。"""
+        return self._mini if tier == "fast" else self._flagship
+
+    def complete(
+        self, *, messages: list[dict], temperature: float = 0.2, tier: ModelTier = "strong"
+    ) -> str:
+        response = self._client(tier).invoke(_to_lc_messages(messages))
         return str(response.content)
 
-    def stream(self, *, messages: list[dict], temperature: float = 0.2) -> Iterator[str]:
-        for chunk in self._flagship.stream(_to_lc_messages(messages)):
+    def stream(
+        self, *, messages: list[dict], temperature: float = 0.2, tier: ModelTier = "strong"
+    ) -> Iterator[str]:
+        for chunk in self._client(tier).stream(_to_lc_messages(messages)):
             if chunk.content:
                 yield str(chunk.content)

@@ -1,8 +1,10 @@
-from typing import Annotated, TypedDict
+from typing import Annotated, NotRequired, TypedDict
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
+
+from care_lifeline.safety.scope import ScopeResult
 
 
 class Citation(BaseModel):
@@ -32,14 +34,18 @@ class ReportResult(BaseModel):
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     patient_id: str | None
-    intent: str
+    intent: str  # emergency | medication | report | triage | refuse
     risk_level: str  # routine | urgent | critical
+    # 以下三个字段由循环图内部维护，调用方可省略（NotRequired 保证旧调用点不破坏）。
+    scope_result: NotRequired[ScopeResult | None]
     citations: list[Citation]
     draft: str
     qc_result: QCResult | None
     hitl_required: bool
     report: ReportResult | None
     medication_warnings: list[str]
+    retry_count: NotRequired[int]  # Agent 重写循环计数，上限见 builder._MAX_RETRY
+    memory_context: NotRequired[str]  # 患者纵向记忆注入（脱敏后的摘要文本）
 
 
 def last_user_text(messages: list[BaseMessage]) -> str:

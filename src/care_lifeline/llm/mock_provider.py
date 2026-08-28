@@ -1,29 +1,7 @@
 from collections.abc import Iterator
 
-EMERGENCY_KEYWORDS = (
-    "胸痛",
-    "呼吸困难",
-    "卒中",
-    "中风",
-    "昏迷",
-    "大出血",
-    "窒息",
-    "休克",
-)
-
-REPORT_KEYWORDS = (
-    "化验",
-    "报告",
-    "指标",
-    "参考范围",
-    "升高",
-    "偏低",
-    "贫血",
-    "血糖",
-    "血压",
-    "肌酐",
-    "转氨酶",
-)
+from care_lifeline.llm.provider import ModelTier
+from care_lifeline.safety.keywords import EMERGENCY_KEYWORDS, REPORT_KEYWORDS
 
 
 def _last_user_text(messages: list[dict]) -> str:
@@ -37,6 +15,8 @@ class MockProvider:
     """Rule-driven provider that returns deterministic, realistic responses.
 
     Used when ``LLM_MODE=mock`` so the whole stack runs without external APIs.
+    关键词与 :mod:`care_lifeline.safety.keywords` 共享，避免判定口径漂移。
+    ``tier`` 在本实现中被忽略（mock 无模型分层）。
     """
 
     def _respond(self, text: str) -> str:
@@ -55,8 +35,12 @@ class MockProvider:
             "既往病史与正在服用的药物。"
         )
 
-    def complete(self, *, messages: list[dict], temperature: float = 0.2) -> str:
+    def complete(
+        self, *, messages: list[dict], temperature: float = 0.2, tier: ModelTier = "strong"
+    ) -> str:
         return self._respond(_last_user_text(messages))
 
-    def stream(self, *, messages: list[dict], temperature: float = 0.2) -> Iterator[str]:
+    def stream(
+        self, *, messages: list[dict], temperature: float = 0.2, tier: ModelTier = "strong"
+    ) -> Iterator[str]:
         yield from self._respond(_last_user_text(messages)).split("，")

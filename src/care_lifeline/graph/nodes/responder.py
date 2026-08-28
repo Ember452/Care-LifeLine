@@ -14,5 +14,6 @@ def responder_node(state: AgentState, provider) -> dict:
     warnings: list[str] = state.get("medication_warnings", [])
     if warnings:
         body = f"{body}\n\n用药警示：\n" + "\n".join(warnings)
-    body = f"{body}{DISCLAIMER}"
+    if "免责" not in body:
+        body = f"{body}{DISCLAIMER}"
     return {"draft": body, "messages": [AIMessage(body)]}
