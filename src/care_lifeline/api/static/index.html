@@ -20,6 +20,8 @@
     .meta { color: #64748b; font-size: 12px; }
     .row { display: flex; gap: 8px; }
     .row input { flex: 1; }
+    .hidden { display: none; }
+    pre { white-space: pre-wrap; background: #f1f5f9; padding: 10px; border-radius: 8px; }
   </style>
 </head>
 <body>
@@ -74,6 +76,22 @@
         <button onclick="loadReminders()">查看主动提醒</button>
       </div>
       <ul id="reminders"></ul>
+
+      <hr />
+      <h3>🩺 医生工作台（HITL 审核）</h3>
+      <button onclick="loadQueue()">加载待审队列</button>
+      <ul id="queue"></ul>
+      <div id="review-box" class="card hidden"></div>
+
+      <hr />
+      <h3>🛠 管理后台</h3>
+      <div class="row">
+        <button onclick="loadMetrics()">运营指标</button>
+        <input id="audit-thread" placeholder="会话 ID" />
+        <button onclick="loadAudit()">审计轨迹</button>
+        <button onclick="loadRules()">规则列表</button>
+      </div>
+      <pre id="admin-out"></pre>
     </section>
   </main>
 
@@ -210,6 +228,65 @@
         ul.appendChild(li);
       }
       if (!items.length) ul.innerHTML = "<li>暂无提醒</li>";
+    }
+
+    async function loadQueue() {
+      const resp = await fetch("/v1/workbench/queue", { headers: auth() });
+      if (!resp.ok) { document.getElementById("queue").textContent = "加载失败"; return; }
+      const items = await resp.json();
+      const ul = document.getElementById("queue");
+      ul.innerHTML = "";
+      for (const it of items) {
+        const li = document.createElement("li");
+        li.textContent = `#${it.id} [${it.thread_id}] ${it.input_text}`;
+        li.style.cursor = "pointer";
+        li.onclick = () => showReview(it);
+        ul.appendChild(li);
+      }
+      if (!items.length) ul.innerHTML = "<li>暂无待审</li>";
+    }
+
+    function showReview(it) {
+      const box = document.getElementById("review-box");
+      box.classList.remove("hidden");
+      box.innerHTML =
+        `<div class='meta'>#${it.id} ${it.thread_id}</div>` +
+        `<div class='msg user'>${it.input_text}</div>` +
+        `<div class='msg bot'>${it.draft}</div>` +
+        `<div class='meta'>违规：${it.violations.join("，")}</div>` +
+        `<textarea id='corrected' rows='2' style='width:100%' placeholder='edit 时填写修正内容'></textarea>` +
+        `<div class='row'>` +
+        `<button onclick="submitReview(${it.id},'approve')">通过</button>` +
+        `<button onclick="submitReview(${it.id},'reject')">驳回</button>` +
+        `<button onclick="submitReview(${it.id},'edit')">修正</button></div>`;
+    }
+
+    async function submitReview(id, decision) {
+      const body = { decision };
+      if (decision === "edit") body.corrected_text = document.getElementById("corrected").value;
+      await fetch(`/v1/workbench/items/${id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...auth() },
+        body: JSON.stringify(body),
+      });
+      document.getElementById("review-box").classList.add("hidden");
+      loadQueue();
+    }
+
+    async function loadMetrics() {
+      const resp = await fetch("/v1/admin/metrics", { headers: auth() });
+      document.getElementById("admin-out").textContent = JSON.stringify(await resp.json(), null, 2);
+    }
+
+    async function loadAudit() {
+      const tid = document.getElementById("audit-thread").value;
+      const resp = await fetch(`/v1/admin/audit/sessions/${tid}`, { headers: auth() });
+      document.getElementById("admin-out").textContent = JSON.stringify(await resp.json(), null, 2);
+    }
+
+    async function loadRules() {
+      const resp = await fetch("/v1/admin/rules", { headers: auth() });
+      document.getElementById("admin-out").textContent = JSON.stringify(await resp.json(), null, 2);
     }
   </script>
 </body>
