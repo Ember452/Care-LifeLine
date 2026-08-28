@@ -51,7 +51,7 @@
       <div id="messages"></div>
       <div class="row">
         <input id="input" placeholder="描述您的症状或问题…" onkeydown="if(event.key==='Enter')send()" />
-        <button onclick="send()">发送</button>
+        <button id="send-btn" onclick="send()">发送</button>
       </div>
 
       <hr />
@@ -128,45 +128,53 @@
     }
 
     async function send() {
+      const btn = document.getElementById("send-btn");
       const sessionId = document.getElementById("session").value || "sess-1";
       const text = document.getElementById("input").value.trim();
       if (!text) return;
       document.getElementById("input").value = "";
       addMsg("user", text);
+      btn.disabled = true;
+      btn.textContent = "发送中…";
 
-      const resp = await fetch("/v1/chat/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...auth() },
-        body: JSON.stringify({ session_id: sessionId, message: text }),
-      });
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let botText = "";
-      let isHitl = false;
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split("\n\n");
-        buffer = events.pop();
-        for (const block of events) {
-          const m = block.match(/^event: (.+)\ndata: (.+)$/s);
-          if (!m) continue;
-          const event = m[1];
-          const data = JSON.parse(m[2]);
-          if (event === "meta") {
-            // 跳过
-          } else if (event === "token") {
-            botText += data.text;
-          } else if (event === "hitl") {
-            isHitl = true;
-          } else if (event === "done") {
-            addMsg(isHitl ? "hitl" : "bot", botText);
-            botText = "";
-            isHitl = false;
+      try {
+        const resp = await fetch("/v1/chat/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...auth() },
+          body: JSON.stringify({ session_id: sessionId, message: text }),
+        });
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let botText = "";
+        let isHitl = false;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split("\n\n");
+          buffer = events.pop();
+          for (const block of events) {
+            const m = block.match(/^event: (.+)\ndata: (.+)$/s);
+            if (!m) continue;
+            const event = m[1];
+            const data = JSON.parse(m[2]);
+            if (event === "meta") {
+              // 跳过
+            } else if (event === "token") {
+              botText += data.text;
+            } else if (event === "hitl") {
+              isHitl = true;
+            } else if (event === "done") {
+              addMsg(isHitl ? "hitl" : "bot", botText);
+              botText = "";
+              isHitl = false;
+            }
           }
         }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "发送";
       }
     }
 
