@@ -34,3 +34,11 @@ data/cache/
 # 日志
 *.log
 logs/
+
+# 本地数据库（SQLite 兜底，不入库）
+*.db
+*.sqlite
+*.sqlite3
+
+# Agent 工具记忆（非项目产物）
+.workbuddy/

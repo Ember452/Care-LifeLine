@@ -6,7 +6,7 @@ def test_defaults() -> None:
     assert settings.llm_mode == "mock"
     assert settings.qc_risk_threshold == 0.75
     assert settings.api_port == 8000
-    assert settings.database_url.startswith("postgresql")
+    assert settings.database_url.startswith("sqlite")
 
 
 def test_real_mode() -> None:
