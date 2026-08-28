@@ -52,4 +52,4 @@
 
 | 日期 | 主题 | 关联 |
 |---|---|---|
-| （暂无，第一个功能完成后添加） | | |
+| 2026-08-28 | TestClient 下 LangGraph checkpointer 与异步 SQLAlchemy 死锁 | M2-4 会话持久化 |
