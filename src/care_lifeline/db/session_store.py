@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from care_lifeline.api.security import hash_password, verify_password
 from care_lifeline.db.engine import get_sessionmaker
-from care_lifeline.db.models import AuditLog, Message, QcHit, Session, User
+from care_lifeline.db.models import AuditLog, HitlReview, Message, QcHit, Session, User
 
 
 def _to_langchain_message(row: Message):
@@ -147,3 +147,71 @@ def seed_demo_user(username: str = "demo", password: str = "demo123") -> None:
         if exists is None:
             session.add(User(username=username, hashed_password=hash_password(password)))
             session.commit()
+
+
+def create_hitl_review(
+    session_id: int,
+    thread_id: str,
+    input_text: str,
+    draft: str,
+    qc_json: str = "{}",
+    violations_json: str = "[]",
+    patient_context: str | None = None,
+) -> HitlReview:
+    maker = get_sessionmaker()
+    with maker() as session:
+        review = HitlReview(
+            session_id=session_id,
+            thread_id=thread_id,
+            input_text=input_text,
+            draft=draft,
+            qc_json=qc_json,
+            violations_json=violations_json,
+            patient_context=patient_context,
+            status="pending",
+        )
+        session.add(review)
+        session.commit()
+        session.refresh(review)
+        return review
+
+
+def list_pending_reviews() -> list[HitlReview]:
+    maker = get_sessionmaker()
+    with maker() as session:
+        stmt = (
+            select(HitlReview)
+            .where(HitlReview.status == "pending")
+            .order_by(HitlReview.created_at.desc())
+        )
+        return list(session.execute(stmt).scalars().all())
+
+
+def get_review(review_id: int) -> HitlReview | None:
+    maker = get_sessionmaker()
+    with maker() as session:
+        return session.execute(
+            select(HitlReview).where(HitlReview.id == review_id)
+        ).scalar_one_or_none()
+
+
+def resolve_review(
+    review_id: int, decision: str, reviewer: str, corrected_text: str | None = None
+) -> HitlReview | None:
+    maker = get_sessionmaker()
+    with maker() as session:
+        review = session.execute(
+            select(HitlReview).where(HitlReview.id == review_id)
+        ).scalar_one_or_none()
+        if review is None:
+            return None
+        review.status = decision
+        review.decision = decision
+        review.reviewer = reviewer
+        review.corrected_text = corrected_text
+        from datetime import datetime
+
+        review.reviewed_at = datetime.now()
+        session.commit()
+        session.refresh(review)
+        return review

@@ -113,3 +113,24 @@ class PatientMetric(Base):
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
     measured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class HitlReview(Base):
+    """Clinician review queue item for high-risk / HITL sessions (M4-1)."""
+
+    __tablename__ = "hitl_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"))
+    thread_id: Mapped[str] = mapped_column(String(64))
+    input_text: Mapped[str] = mapped_column(Text)
+    draft: Mapped[str] = mapped_column(Text)
+    qc_json: Mapped[str] = mapped_column(Text, default="{}")
+    violations_json: Mapped[str] = mapped_column(Text, default="[]")
+    patient_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    reviewer: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    corrected_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

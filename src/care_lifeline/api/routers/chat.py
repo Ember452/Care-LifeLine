@@ -135,6 +135,26 @@ async def chat_stream(
                 {"status": qc.status, "risk_score": qc.risk_score, "violations": qc.violations},
             )
             yield _sse("done", {"final": display, "citations": []})
+            if _persistence_enabled():
+                with contextlib.suppress(Exception):
+                    target = session_store.get_session_by_thread_id(req.session_id)
+                    if target is not None:
+                        session_store.create_hitl_review(
+                            session_id=target.id,
+                            thread_id=req.session_id,
+                            input_text=req.message,
+                            draft=state["draft"],
+                            qc_json=json.dumps(
+                                {
+                                    "status": qc.status,
+                                    "risk_score": qc.risk_score,
+                                    "violations": qc.violations,
+                                },
+                                ensure_ascii=False,
+                            ),
+                            violations_json=json.dumps(qc.violations, ensure_ascii=False),
+                        )
+                        session_store.write_audit(target.id, "hitl_review_created", user.username)
             return
 
         if qc is not None and qc.status == "refused":

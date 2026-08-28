@@ -77,3 +77,21 @@ CREATE TABLE IF NOT EXISTS patient_metrics (
     measured_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_patient_metrics_patient ON patient_metrics(patient_id);
+
+CREATE TABLE IF NOT EXISTS hitl_reviews (
+    id              SERIAL PRIMARY KEY,
+    session_id      INTEGER NOT NULL REFERENCES sessions(id),
+    thread_id       VARCHAR(64) NOT NULL,
+    input_text      TEXT NOT NULL,
+    draft           TEXT NOT NULL,
+    qc_json         TEXT NOT NULL DEFAULT '{}',
+    violations_json TEXT NOT NULL DEFAULT '[]',
+    patient_context TEXT,
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending',
+    reviewer        VARCHAR(64),
+    decision        VARCHAR(16),
+    corrected_text  TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    reviewed_at     TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS ix_hitl_reviews_status ON hitl_reviews(status);
