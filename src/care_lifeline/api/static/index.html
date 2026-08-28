@@ -51,6 +51,29 @@
         <input id="input" placeholder="描述您的症状或问题…" onkeydown="if(event.key==='Enter')send()" />
         <button onclick="send()">发送</button>
       </div>
+
+      <hr />
+      <h3>📄 报告解读</h3>
+      <textarea id="report-text" rows="4" style="width:100%" placeholder="粘贴化验单文本，按行：指标: 值（参考范围）"></textarea>
+      <div class="row">
+        <button onclick="interpretReport()">解读报告</button>
+      </div>
+      <div id="report-result"></div>
+
+      <hr />
+      <h3>🩺 慢病管理</h3>
+      <div class="row">
+        <input id="pid" placeholder="患者 ID" value="1" style="max-width:90px" />
+        <input id="m-name" placeholder="指标名，如 收缩压" style="flex:2" />
+        <input id="m-value" placeholder="数值" style="max-width:90px" />
+        <input id="m-unit" placeholder="单位" style="max-width:80px" />
+        <button onclick="addMetric()">记录指标</button>
+      </div>
+      <div id="metric-status" class="meta"></div>
+      <div class="row">
+        <button onclick="loadReminders()">查看主动提醒</button>
+      </div>
+      <ul id="reminders"></ul>
     </section>
   </main>
 
@@ -135,6 +158,58 @@
       div.textContent = (role === "user" ? "我：" : role === "hitl" ? "⚠️ 人工接管：" : "助手：") + text;
       document.getElementById("messages").appendChild(div);
       document.getElementById("messages").scrollTop = 1e9;
+    }
+
+    async function interpretReport() {
+      const text = document.getElementById("report-text").value;
+      const resp = await fetch("/v1/report/interpret", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...auth() },
+        body: JSON.stringify({ text }),
+      });
+      const box = document.getElementById("report-result");
+      if (!resp.ok) { box.textContent = "请求失败"; return; }
+      const data = await resp.json();
+      let html = "<div class='meta'>结构化指标：</div><ul>";
+      for (const f of data.fields) {
+        html += `<li>${f.name}: ${f.value}${f.reference ? " (" + f.reference + ")" : ""}${f.abnormal ? " ⚠️异常" : ""}</li>`;
+      }
+      html += "</ul><div class='meta'>引用指南：</div><ul>";
+      for (const c of data.citations) html += `<li>${c.source}：${c.snippet}</li>`;
+      html += "</ul><div class='meta'>解读摘要：</div><div class='msg bot'>" + data.draft + "</div>";
+      box.innerHTML = html;
+    }
+
+    async function addMetric() {
+      const pid = document.getElementById("pid").value;
+      const body = {
+        name: document.getElementById("m-name").value,
+        value: parseFloat(document.getElementById("m-value").value),
+        unit: document.getElementById("m-unit").value || null,
+      };
+      const resp = await fetch(`/v1/patients/${pid}/metrics`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...auth() },
+        body: JSON.stringify(body),
+      });
+      document.getElementById("metric-status").textContent = resp.ok
+        ? `已记录 ${body.name}=${body.value}`
+        : "记录失败";
+    }
+
+    async function loadReminders() {
+      const pid = document.getElementById("pid").value;
+      const resp = await fetch(`/v1/patients/${pid}/reminders`, { headers: auth() });
+      const ul = document.getElementById("reminders");
+      if (!resp.ok) { ul.innerHTML = "<li>请求失败</li>"; return; }
+      const items = await resp.json();
+      ul.innerHTML = "";
+      for (const r of items) {
+        const li = document.createElement("li");
+        li.textContent = "⚠️ " + r.message;
+        ul.appendChild(li);
+      }
+      if (!items.length) ul.innerHTML = "<li>暂无提醒</li>";
     }
   </script>
 </body>
