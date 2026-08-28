@@ -1,3 +1,5 @@
+from langchain_core.messages import AIMessage
+
 from care_lifeline.graph.state import AgentState, Citation
 
 DISCLAIMER = "\n\n（免责声明：本回复仅供参考，不替代执业医师的诊断与治疗建议。）"
@@ -10,4 +12,4 @@ def responder_node(state: AgentState, provider) -> dict:
         refs = "\n".join(f"[{c.index}] {c.source}：{c.snippet}" for c in citations)
         body = f"{body}\n\n参考：\n{refs}"
     body = f"{body}{DISCLAIMER}"
-    return {"draft": body}
+    return {"draft": body, "messages": [AIMessage(body)]}
