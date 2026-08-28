@@ -20,8 +20,8 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
-def _token(client: TestClient) -> str:
-    resp = client.post("/v1/auth/login", data={"username": "demo", "password": "demo123"})
+def _token(client: TestClient, username: str = "admin", password: str = "admin123") -> str:
+    resp = client.post("/v1/auth/login", data={"username": username, "password": password})
     assert resp.status_code == 200, resp.text
     return resp.json()["access_token"]
 
@@ -31,7 +31,18 @@ def test_metrics_structure(client: TestClient) -> None:
     resp = client.get("/v1/admin/metrics", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     data = resp.json()
-    for key in ("refuse_rate", "leak_rate", "faithfulness", "compliance", "hitl_rate", "p95_ms"):
+    for key in (
+        "refuse_rate",
+        "refusal_rate",
+        "leak_rate",
+        "faithfulness",
+        "compliance",
+        "hitl_rate",
+        "p95_ms",
+        "total_sessions",
+        "total_messages",
+        "pending_reviews",
+    ):
         assert key in data
     assert data["faithfulness"] == 1.0
     assert data["compliance"] == 1.0
@@ -70,3 +81,38 @@ def test_rules_toggle(client: TestClient) -> None:
         json={"code": "emergency", "enabled": True},
         headers={"Authorization": f"Bearer {token}"},
     )
+
+
+def test_rule_toggle_writes_audit(client: TestClient) -> None:
+    token = _token(client)
+    client.put(
+        "/v1/admin/rules",
+        json={"code": "emergency", "enabled": True},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    resp = client.get("/v1/admin/audit", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    assert any(item["event"] == "qc_rule_toggled" for item in resp.json())
+
+
+def test_admin_audit_pagination(client: TestClient) -> None:
+    token = _token(client)
+    session_store.write_audit(1, "chat_completed", "x")
+    session_store.write_audit(1, "phi_leak", "type=phone")
+    resp = client.get(
+        "/v1/admin/audit?limit=1&offset=0", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+    filtered = client.get(
+        "/v1/admin/audit?event=phi_leak", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert len(filtered.json()) == 1
+    assert filtered.json()[0]["event"] == "phi_leak"
+
+
+def test_admin_denied_for_patient(client: TestClient) -> None:
+    token = _token(client, username="demo", password="demo123")
+    resp = client.get("/v1/admin/metrics", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "forbidden"

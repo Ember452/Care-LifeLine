@@ -42,14 +42,16 @@ def test_stream_event_order(client: TestClient) -> None:
     assert meta < token_idx < qc < done
 
 
-def test_empty_message_returns_error_event(client: TestClient) -> None:
+def test_empty_message_returns_422(client: TestClient) -> None:
     token = _token(client)
     resp = client.post(
         "/v1/chat/stream",
         json={"session_id": "s1", "message": "   "},
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert "event: error" in resp.text
+    # 契约 §1：空输入等客户端错误先返回 4xx，不再用 HTTP 200 包错误事件。
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "invalid_request"
 
 
 def test_unauthorized_without_token(client: TestClient) -> None:
@@ -71,7 +73,7 @@ def test_index_serves_html(client: TestClient) -> None:
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     # 根路径提供前端：React SPA（<div id="root">）或静态页（Care-LifeLine）
-    assert "<div id=\"root\">" in resp.text or "Care-LifeLine" in resp.text
+    assert '<div id="root">' in resp.text or "Care-LifeLine" in resp.text
 
 
 def test_sessions_requires_auth(client: TestClient) -> None:

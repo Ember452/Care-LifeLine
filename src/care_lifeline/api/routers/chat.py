@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
+import time
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from care_lifeline.api.middleware.phi import detect_phi_leak
+from care_lifeline.api.runtime import record_latency_ms
 from care_lifeline.api.security import CurrentUser, get_current_user
 from care_lifeline.config import get_settings
 from care_lifeline.db import session_store
@@ -18,9 +22,39 @@ from care_lifeline.graph.checkpointer import get_checkpointer
 from care_lifeline.graph.state import AgentState
 from care_lifeline.llm.provider import make_provider
 
+logger = logging.getLogger(__name__)
+
+_INTERRUPT_EVENT_KEY = "__interrupt__"
+_HITL_INTERRUPT_COPY = (
+    "检测到高风险信号，已为您转接人工医疗顾问，请耐心等待医生回复；"
+    "若情况紧急请立即拨打急救电话或前往急诊。"
+)
+
+# 节点名 → 人类可读说明（agent_step 事件用）。
+_NODE_LABELS: dict[str, str] = {
+    "scope_check": "请求范围判定",
+    "router": "意图路由",
+    "triage": "分诊",
+    "report_interpreter": "报告解读",
+    "medication": "用药审查",
+    "qc": "质控",
+    "rewrite": "重写",
+    "hitl": "转人工",
+    "refuse": "拒答",
+    "responder": "回复生成",
+}
+
+# 节点 → 其底层调用的工具（tool_call 事件用）。
+_TOOL_BY_NODE: dict[str, str] = {
+    "report_interpreter": "report_parse",
+    "medication": "drug_interaction",
+    "triage": "guideline_search",
+}
+
 
 def _persistence_enabled() -> bool:
     return get_settings().database_url.startswith(("sqlite", "postgresql"))
+
 
 router = APIRouter()
 
@@ -28,6 +62,10 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     session_id: str
     message: str
+
+
+class CreateSessionRequest(BaseModel):
+    title: str | None = None
 
 
 class SessionItem(BaseModel):
@@ -39,6 +77,50 @@ class SessionItem(BaseModel):
 def list_user_sessions(user: CurrentUser = Depends(get_current_user)) -> list[SessionItem]:
     sessions = session_store.list_sessions(user_id=user.user_id)
     return [SessionItem(session_id=s.thread_id, title=s.title) for s in sessions]
+
+
+@router.post("/sessions", response_model=SessionItem)
+def create_session(
+    body: CreateSessionRequest | None = None,
+    user: CurrentUser = Depends(get_current_user),
+) -> SessionItem:
+    """新建会话（契约 §7.2）。"""
+    session = session_store.get_or_create_session(
+        _new_thread_id(), user_id=user.user_id, title=body.title if body else None
+    )
+    return SessionItem(session_id=session.thread_id, title=session.title)
+
+
+@router.delete("/sessions/{session_id}", response_model=dict)
+def delete_session(session_id: str, user: CurrentUser = Depends(get_current_user)) -> dict:
+    """删除会话（契约 §7.2）。"""
+    if not session_store.delete_session(session_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "会话不存在"},
+        )
+    return {"ok": True}
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[dict])
+def session_messages(session_id: str, user: CurrentUser = Depends(get_current_user)) -> list[dict]:
+    """返回会话消息历史（契约 §7.2）。"""
+    session = session_store.get_session_by_thread_id(session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "会话不存在"},
+        )
+    return [
+        {"role": m.role, "content": m.content, "citations": m.citations}
+        for m in session_store.get_messages(session.id)
+    ]
+
+
+def _new_thread_id() -> str:
+    import uuid
+
+    return f"sess_{uuid.uuid4().hex[:12]}"
 
 
 def _sse(event: str, data: dict) -> str:
@@ -57,10 +139,14 @@ def _initial_state(message: str) -> AgentState:
         "hitl_required": False,
         "report": None,
         "medication_warnings": [],
+        "scope_result": None,
+        "retry_count": 0,
+        "memory_context": "",
     }
 
 
 def _persist(session_id: str, user_id: int, user_message: str, state: AgentState) -> None:
+    """把本轮对话落库；落库前做 PHI 泄漏检测并写审计（P1-10）。"""
     session = session_store.get_or_create_session(
         session_id, user_id=user_id, title=user_message[:40]
     )
@@ -71,6 +157,9 @@ def _persist(session_id: str, user_id: int, user_message: str, state: AgentState
         state["draft"],
         citations=[c.model_dump() for c in state["citations"]],
     )
+    leak = detect_phi_leak(state["draft"])
+    if leak is not None:
+        session_store.write_audit(session.id, "phi_leak", f"type={leak}")
     session_store.write_audit(session.id, "chat_completed", state["intent"])
     qc = state["qc_result"]
     if qc is not None and qc.status in ("hitl", "refused"):
@@ -83,16 +172,64 @@ def _persist(session_id: str, user_id: int, user_message: str, state: AgentState
         )
 
 
+def _meta_data(req: ChatRequest, state: AgentState) -> dict:
+    scope = state.get("scope_result")
+    return {
+        "session_id": req.session_id,
+        "intent": state.get("intent", ""),
+        "risk_level": state.get("risk_level", "routine"),
+        "scope_verdict": scope.verdict if scope is not None else None,
+    }
+
+
+def _qc_data(qc) -> dict:
+    return {
+        "status": qc.status,
+        "risk_score": qc.risk_score,
+        "violations": qc.violations,
+    }
+
+
+def _create_hitl_review(req: ChatRequest, user: CurrentUser, state: AgentState) -> None:
+    if not _persistence_enabled():
+        return
+    with contextlib.suppress(Exception):
+        target = session_store.get_session_by_thread_id(req.session_id)
+        qc = state["qc_result"]
+        if target is not None and qc is not None:
+            session_store.create_hitl_review(
+                session_id=target.id,
+                thread_id=req.session_id,
+                input_text=req.message,
+                draft=state["draft"],
+                qc_json=json.dumps(
+                    _qc_data(qc),
+                    ensure_ascii=False,
+                ),
+                violations_json=json.dumps(qc.violations, ensure_ascii=False),
+            )
+            session_store.write_audit(target.id, "hitl_review_created", user.username)
+
+
+async def _stream_interrupt(req: ChatRequest, state: AgentState) -> AsyncIterator[str]:
+    """interrupt 真挂起分支：只发明确文案，不吐空 token（契约 §4.1）。"""
+    yield _sse("meta", _meta_data(req, state))
+    yield _sse("hitl", {"reason": "检测到高危症状，需人工医生复核"})
+    for chunk in _HITL_INTERRUPT_COPY.split("，"):
+        yield _sse("token", {"text": chunk})
+    yield _sse("qc", {"status": "hitl", "risk_score": 0.0, "violations": []})
+    yield _sse("done", {"final": _HITL_INTERRUPT_COPY, "citations": []})
+
+
 @router.post("/chat/stream")
 async def chat_stream(
     req: ChatRequest, user: CurrentUser = Depends(get_current_user)
 ) -> StreamingResponse:
     if not req.message.strip():
-
-        async def error_stream() -> AsyncIterator[str]:
-            yield _sse("error", {"code": "INVALID", "message": "消息不能为空"})
-
-        return StreamingResponse(error_stream(), media_type="text/event-stream")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_request", "message": "消息不能为空"},
+        )
 
     async def generate() -> AsyncIterator[str]:
         initial = _initial_state(req.message)
@@ -109,10 +246,61 @@ async def chat_stream(
                     initial["messages"] = prior + initial["messages"]
 
         graph = build_graph(make_provider(), checkpointer=get_checkpointer())
-        config = (
-            {"configurable": {"thread_id": req.session_id}} if get_checkpointer() else None
-        )
-        state = await graph.ainvoke(initial, config=config)
+        config = {"configurable": {"thread_id": req.session_id}} if get_checkpointer() else None
+        start = time.perf_counter()
+        final_state: AgentState | None = None
+        interrupted = False
+        try:
+            async for mode, chunk in graph.astream(
+                initial, config=config, stream_mode=["updates", "values"]
+            ):
+                if mode == "updates":
+                    for node_name, update in chunk.items():
+                        if node_name == _INTERRUPT_EVENT_KEY:
+                            interrupted = True
+                            continue
+                        yield _sse(
+                            "agent_step",
+                            {
+                                "node": node_name,
+                                "detail": _NODE_LABELS.get(node_name, ""),
+                            },
+                        )
+                        tool = _TOOL_BY_NODE.get(node_name)
+                        if tool is not None:
+                            yield _sse(
+                                "tool_call",
+                                {
+                                    "tool": tool,
+                                    "args_preview": req.message[:40],
+                                    "ok": True,
+                                },
+                            )
+                        if isinstance(update, dict) and update.get("memory_context"):
+                            yield _sse(
+                                "memory",
+                                {
+                                    "patient_id": initial.get("patient_id"),
+                                    "metrics_used": [],
+                                },
+                            )
+                else:
+                    final_state = chunk
+        except Exception as exc:
+            logger.exception("chat_stream_failed", exc_info=exc)
+            yield _sse(
+                "error",
+                {"code": "internal_error", "message": "处理失败，请稍后重试"},
+            )
+            return
+
+        record_latency_ms((time.perf_counter() - start) * 1000)
+        state = final_state if final_state is not None else initial
+
+        if interrupted:
+            async for chunk in _stream_interrupt(req, state):
+                yield chunk
+            return
 
         if _persistence_enabled():
             with contextlib.suppress(Exception):
@@ -121,73 +309,26 @@ async def chat_stream(
         qc = state["qc_result"]
         if qc is not None and qc.status == "hitl":
             display = (
-                "检测到高风险信号，已为您转接人工医疗顾问；"
-                "若情况紧急请立即拨打急救电话或前往急诊。"
+                "检测到高风险信号，已为您转接人工医疗顾问；若情况紧急请立即拨打急救电话或前往急诊。"
             )
-            yield _sse(
-                "meta",
-                {
-                    "session_id": req.session_id,
-                    "intent": state["intent"],
-                    "risk_level": state["risk_level"],
-                },
-            )
+            yield _sse("meta", _meta_data(req, state))
             yield _sse("hitl", {"reason": qc.violations})
             for chunk in display.split("，"):
                 yield _sse("token", {"text": chunk})
-            yield _sse(
-                "qc",
-                {"status": qc.status, "risk_score": qc.risk_score, "violations": qc.violations},
-            )
+            yield _sse("qc", _qc_data(qc))
             yield _sse("done", {"final": display, "citations": []})
-            if _persistence_enabled():
-                with contextlib.suppress(Exception):
-                    target = session_store.get_session_by_thread_id(req.session_id)
-                    if target is not None:
-                        session_store.create_hitl_review(
-                            session_id=target.id,
-                            thread_id=req.session_id,
-                            input_text=req.message,
-                            draft=state["draft"],
-                            qc_json=json.dumps(
-                                {
-                                    "status": qc.status,
-                                    "risk_score": qc.risk_score,
-                                    "violations": qc.violations,
-                                },
-                                ensure_ascii=False,
-                            ),
-                            violations_json=json.dumps(qc.violations, ensure_ascii=False),
-                        )
-                        session_store.write_audit(target.id, "hitl_review_created", user.username)
+            _create_hitl_review(req, user, state)
             return
 
         if qc is not None and qc.status == "refused":
             display = "抱歉，该问题超出本助手服务范围，建议咨询具备资质的医生获取专业意见。"
-            yield _sse(
-                "meta",
-                {
-                    "session_id": req.session_id,
-                    "intent": state["intent"],
-                    "risk_level": state["risk_level"],
-                },
-            )
+            yield _sse("meta", _meta_data(req, state))
             yield _sse("token", {"text": display})
-            yield _sse(
-                "qc",
-                {"status": qc.status, "risk_score": qc.risk_score, "violations": qc.violations},
-            )
+            yield _sse("qc", _qc_data(qc))
             yield _sse("done", {"final": display, "citations": []})
             return
 
-        yield _sse(
-            "meta",
-            {
-                "session_id": req.session_id,
-                "intent": state["intent"],
-                "risk_level": state["risk_level"],
-            },
-        )
+        yield _sse("meta", _meta_data(req, state))
         for chunk in state["draft"].split("，"):
             yield _sse("token", {"text": chunk})
         for citation in state["citations"]:
@@ -199,14 +340,8 @@ async def chat_stream(
                     "snippet": citation.snippet,
                 },
             )
-        yield _sse(
-            "qc",
-            {
-                "status": qc.status,
-                "risk_score": qc.risk_score,
-                "violations": qc.violations,
-            },
-        )
+        default_qc = {"status": "passed", "risk_score": 0.0, "violations": []}
+        yield _sse("qc", _qc_data(qc) if qc is not None else default_qc)
         yield _sse(
             "done",
             {

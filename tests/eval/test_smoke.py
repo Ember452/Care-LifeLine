@@ -18,8 +18,8 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
-def _token(client: TestClient) -> str:
-    resp = client.post("/v1/auth/login", data={"username": "demo", "password": "demo123"})
+def _token(client: TestClient, username: str = "admin", password: str = "admin123") -> str:
+    resp = client.post("/v1/auth/login", data={"username": username, "password": password})
     assert resp.status_code == 200, resp.text
     return resp.json()["access_token"]
 
@@ -59,9 +59,9 @@ def test_full_stack_smoke(client: TestClient) -> None:
     )
     assert reviewed.status_code == 200
     assert reviewed.json()["status"] == "approve"
-    assert client.get(
-        "/v1/workbench/queue", headers={"Authorization": f"Bearer {token}"}
-    ).json() == []
+    assert (
+        client.get("/v1/workbench/queue", headers={"Authorization": f"Bearer {token}"}).json() == []
+    )
 
     # 报告解读
     report = client.post(
@@ -79,9 +79,7 @@ def test_full_stack_smoke(client: TestClient) -> None:
         headers={"Authorization": f"Bearer {token}"},
     )
     assert metric.status_code == 200
-    reminders = client.get(
-        "/v1/patients/1/reminders", headers={"Authorization": f"Bearer {token}"}
-    )
+    reminders = client.get("/v1/patients/1/reminders", headers={"Authorization": f"Bearer {token}"})
     assert any(r["metric"] == "收缩压" for r in reminders.json())
 
     # 管理后台指标可见

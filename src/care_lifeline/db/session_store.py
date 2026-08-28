@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from care_lifeline.api.security import hash_password, verify_password
 from care_lifeline.db.engine import get_sessionmaker
@@ -121,10 +121,18 @@ def get_user_by_username(username: str) -> User | None:
         return session.execute(select(User).where(User.username == username)).scalar_one_or_none()
 
 
-def create_user(username: str, password: str) -> User:
+def create_user(
+    username: str, password: str, role: str = "patient", display_name: str | None = None
+) -> User:
+    """创建用户；用户名重复时抛 IntegrityError（由调用方转成 409）。"""
     maker = get_sessionmaker()
     with maker() as session:
-        user = User(username=username, hashed_password=hash_password(password))
+        user = User(
+            username=username,
+            hashed_password=hash_password(password),
+            role=role,
+            display_name=display_name,
+        )
         session.add(user)
         session.commit()
         session.refresh(user)
@@ -140,13 +148,76 @@ def verify_user(username: str, password: str) -> User | None:
     return user
 
 
-def seed_demo_user(username: str = "demo", password: str = "demo123") -> None:
+# 种子用户（契约 §8）：admin / doctor / demo 三种角色。
+_DEMO_USERS: tuple[tuple[str, str, str], ...] = (
+    ("admin", "admin123", "admin"),
+    ("doctor", "doctor123", "clinician"),
+    ("demo", "demo123", "patient"),
+)
+
+
+def seed_demo_user() -> None:
+    """幂等写入三个演示账号（admin/doctor/demo）。"""
     maker = get_sessionmaker()
     with maker() as session:
-        exists = session.execute(select(User).where(User.username == username)).scalar_one_or_none()
-        if exists is None:
-            session.add(User(username=username, hashed_password=hash_password(password)))
-            session.commit()
+        for username, password, role in _DEMO_USERS:
+            exists = session.execute(
+                select(User).where(User.username == username)
+            ).scalar_one_or_none()
+            if exists is None:
+                session.add(
+                    User(
+                        username=username,
+                        hashed_password=hash_password(password),
+                        role=role,
+                    )
+                )
+        session.commit()
+
+
+def delete_session(thread_id: str) -> bool:
+    """按 thread_id 删除会话（连同消息与审计）。
+
+    Returns:
+        是否真的删除了某行。
+    """
+    maker = get_sessionmaker()
+    with maker() as session:
+        target = session.execute(
+            select(Session).where(Session.thread_id == thread_id)
+        ).scalar_one_or_none()
+        if target is None:
+            return False
+        session.execute(delete(Message).where(Message.session_id == target.id))
+        session.execute(delete(AuditLog).where(AuditLog.session_id == target.id))
+        session.execute(delete(QcHit).where(QcHit.session_id == target.id))
+        session.delete(target)
+        session.commit()
+        return True
+
+
+def list_audit_logs(
+    event: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[AuditLog]:
+    """分页查询审计流（admin 后台）。
+
+    Args:
+        event: 事件类型过滤（如 ``phi_leak`` / ``chat_completed``）。
+        limit: 每页条数。
+        offset: 偏移量。
+
+    Returns:
+        按时间倒序的审计记录列表。
+    """
+    maker = get_sessionmaker()
+    with maker() as session:
+        stmt = select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        if event:
+            stmt = stmt.where(AuditLog.event == event)
+        stmt = stmt.limit(limit).offset(offset)
+        return list(session.execute(stmt).scalars().all())
 
 
 def create_hitl_review(

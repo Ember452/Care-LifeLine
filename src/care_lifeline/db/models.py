@@ -96,8 +96,10 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id"), nullable=True)
-    event: Mapped[str] = mapped_column(String(64))
+    session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sessions.id"), nullable=True, index=True
+    )
+    event: Mapped[str] = mapped_column(String(64), index=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

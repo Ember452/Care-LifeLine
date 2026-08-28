@@ -19,8 +19,8 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
-def _token(client: TestClient) -> str:
-    resp = client.post("/v1/auth/login", data={"username": "demo", "password": "demo123"})
+def _token(client: TestClient, username: str = "doctor", password: str = "doctor123") -> str:
+    resp = client.post("/v1/auth/login", data={"username": username, "password": password})
     assert resp.status_code == 200, resp.text
     return resp.json()["access_token"]
 
@@ -42,6 +42,14 @@ def test_queue_requires_auth(client: TestClient) -> None:
     assert client.get("/v1/workbench/queue").status_code == 401
 
 
+def test_patient_denied_workbench(client: TestClient) -> None:
+    resp = client.post("/v1/auth/login", data={"username": "demo", "password": "demo123"})
+    token = resp.json()["access_token"]
+    denied = client.get("/v1/workbench/queue", headers={"Authorization": f"Bearer {token}"})
+    assert denied.status_code == 403
+    assert denied.json()["code"] == "forbidden"
+
+
 def test_queue_and_review_flow(client: TestClient) -> None:
     token = _token(client)
     rid = _make_review()
@@ -51,9 +59,7 @@ def test_queue_and_review_flow(client: TestClient) -> None:
     assert len(queue.json()) == 1
     assert queue.json()[0]["input_text"] == "我现在胸痛"
 
-    item = client.get(
-        f"/v1/workbench/items/{rid}", headers={"Authorization": f"Bearer {token}"}
-    )
+    item = client.get(f"/v1/workbench/items/{rid}", headers={"Authorization": f"Bearer {token}"})
     assert item.json()["violations"] == ["emergency"]
 
     approved = client.post(
@@ -64,9 +70,7 @@ def test_queue_and_review_flow(client: TestClient) -> None:
     assert approved.status_code == 200
     assert approved.json()["status"] == "approve"
 
-    queue_after = client.get(
-        "/v1/workbench/queue", headers={"Authorization": f"Bearer {token}"}
-    )
+    queue_after = client.get("/v1/workbench/queue", headers={"Authorization": f"Bearer {token}"})
     assert queue_after.json() == []
 
 
