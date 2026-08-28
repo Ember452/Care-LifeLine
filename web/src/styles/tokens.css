@@ -1,17 +1,94 @@
+/*
+ * 设计 tokens（docs/development-plan.md §6.2）
+ * 原则：低饱和、高信息密度、专业医疗感；无渐变、无发光、无霓虹、无紫色系。
+ */
+
 :root {
-  --brand-500: #3370ff; /* 飞书蓝系，主操作 */
-  --brand-100: #e8f3ff; /* 选中背景 */
-  --success: #00b42a; /* 正常/低危 */
-  --danger: #f53f3f; /* 异常/高危（医疗语境红=危险） */
-  --warning: #ff7d00; /* 中危/待复核 */
-  --bg-page: #f7f8fa; /* 页面浅灰底 */
+  /* 主色：医疗蓝 */
+  --brand-600: #245bdb;
+  --brand-500: #3370ff;
+  --brand-200: #bedaff;
+  --brand-100: #e8f3ff;
+  --brand-50: #f4f8ff;
+
+  /* 语义色 */
+  --success: #00b42a;
+  --success-bg: #e8ffea;
+  --danger: #f53f3f;
+  --danger-bg: #ffece8;
+  --warning: #ff7d00;
+  --warning-bg: #fff7e8;
+  --info: #86909c;
+  --info-bg: #f2f3f5;
+
+  /* 中性 */
+  --bg-page: #f7f8fa;
   --bg-card: #ffffff;
+  --bg-hover: #f2f3f5;
+  --bg-sunken: #f2f3f5;
+  --border: #e5e6eb;
+  --border-strong: #c9cdd4;
   --text-1: #1d2129;
   --text-2: #4e5969;
   --text-3: #86909c;
+
+  /* 形状与阴影（克制） */
   --radius-sm: 4px;
   --radius-md: 8px;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
-    "Helvetica Neue", Arial, sans-serif;
+  --shadow-pop: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  /* 字号 */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+
+  /* 间距 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  /* 字体 */
+  --font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue',
+    Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+
+  /* 动效：150–250ms ease，仅 hover/切换/展开 */
+  --ease: cubic-bezier(0.34, 0.69, 0.1, 1);
+}
+
+/* 暗色主题：Arco 组件读 body[arco-theme]，自绘组件读 html[data-theme] */
+[data-theme='dark'] {
+  --brand-600: #3d6fe0;
+  --brand-500: #4c88ff;
+  --brand-200: #274684;
+  --brand-100: #1d2b53;
+  --brand-50: #171d2e;
+
+  --success: #23c343;
+  --success-bg: #12291b;
+  --danger: #f76965;
+  --danger-bg: #2e1416;
+  --warning: #ff9a2e;
+  --warning-bg: #2e2214;
+  --info: #86909c;
+  --info-bg: #27282b;
+
+  --bg-page: #17171a;
+  --bg-card: #232324;
+  --bg-hover: #2a2a2b;
+  --bg-sunken: #1d1d1f;
+  --border: #333436;
+  --border-strong: #48484b;
+  --text-1: #f6f6f6;
+  --text-2: #c9cdd4;
+  --text-3: #86909c;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 4px 12px rgba(0, 0, 0, 0.5);
 }

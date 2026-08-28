@@ -1,106 +1,257 @@
-import { useState } from 'react'
-import { Button, Input } from '@arco-design/web-react'
+import { useEffect, useRef, useState } from 'react'
+import { Button, Input, Popconfirm, Tag } from '@arco-design/web-react'
+import { IconDelete, IconPlus, IconStop } from '@arco-design/web-react/icon'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { sessionApi, sessionKey } from '@/services/api'
 import { useChatStream } from '@/hooks/useChatStream'
 import StreamMessage from '@/components/StreamMessage'
 import EmptyState from '@/components/EmptyState'
-
-interface LocalSession {
-  id: string
-  title: string
-}
-
-function uid(): string {
-  return crypto.randomUUID()
-}
+import { AsyncState } from '@/components/StateBlock'
+import { useSessionStore } from '@/stores/session'
+import { intentLabel, RISK_LABEL, formatDate } from '@/utils/format'
 
 export default function ChatPage() {
-  const [sessions, setSessions] = useState<LocalSession[]>(() => [{ id: uid(), title: '新对话' }])
-  const [activeId, setActiveId] = useState<string>(() => sessions[0].id)
+  const queryClient = useQueryClient()
+  const activeSessionId = useSessionStore((s) => s.activeSessionId)
+  const setActiveSessionId = useSessionStore((s) => s.setActiveSessionId)
+
   const [input, setInput] = useState('')
-  const { messages, loading, riskLevel, sendMessage } = useChatStream(activeId)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  /* ------------------------------ 会话列表 ------------------------------ */
+  const sessionsQuery = useQuery({
+    queryKey: ['sessions'],
+    queryFn: sessionApi.list,
+    staleTime: 0,
+  })
+  const sessions = sessionsQuery.data ?? []
+
+  const createMutation = useMutation({
+    mutationFn: () => sessionApi.create('新对话'),
+    onSuccess: (s) => {
+      setActiveSessionId(sessionKey(s))
+      void queryClient.invalidateQueries({ queryKey: ['sessions'] })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => sessionApi.remove(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['sessions'] })
+      void queryClient.invalidateQueries({ queryKey: ['messages'] })
+    },
+  })
+
+  // 首次进入无会话时自动新建，避免"没有会话没法聊"的死角
+  // 仅当从未发起过创建时触发（isIdle），失败后不自动重试，防止循环请求
+  useEffect(() => {
+    if (sessionsQuery.isSuccess && sessions.length === 0 && createMutation.isIdle) {
+      createMutation.mutate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsQuery.isSuccess, sessions.length, createMutation.isIdle])
+
+  // 当前激活会话：无则回落第一个；被删除则回落剩余第一个
+  useEffect(() => {
+    if (!activeSessionId && sessions.length) setActiveSessionId(sessionKey(sessions[0]))
+    else if (activeSessionId && sessions.length && !sessions.some((s) => sessionKey(s) === activeSessionId)) {
+      setActiveSessionId(sessionKey(sessions[0]))
+    }
+  }, [sessions, activeSessionId, setActiveSessionId])
+
+  const activeId = sessions.some((s) => sessionKey(s) === activeSessionId) ? activeSessionId : null
+  const activeSession = sessions.find((s) => sessionKey(s) === activeSessionId)
+
+  /* ------------------------------ 历史消息 ------------------------------ */
+  const historyQuery = useQuery({
+    queryKey: ['messages', activeId],
+    queryFn: () => sessionApi.messages(activeId as string),
+    enabled: !!activeId,
+  })
+
+  /* ------------------------------ 流式对话 ------------------------------ */
+  const { messages, loading, riskLevel, intent, sendMessage, stop } = useChatStream(activeId ?? '', {
+    history: historyQuery.data,
+    onFinish: () => {
+      void queryClient.invalidateQueries({ queryKey: ['sessions'] })
+    },
+  })
+
+  // 新消息自动滚到底
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages.length])
 
   const submit = (text: string) => {
     const value = text.trim()
-    if (!value || loading) return
+    if (!value || loading || !activeId) return
     sendMessage(value)
-    setSessions((prev) =>
-      prev.map((s) => (s.id === activeId && s.title === '新对话' ? { ...s, title: value.slice(0, 12) } : s)),
-    )
     setInput('')
   }
 
-  const newSession = () => {
-    const id = uid()
-    setSessions((prev) => [...prev, { id, title: '新对话' }])
-    setActiveId(id)
+  const onDelete = (id: string) => {
+    if (id === activeSessionId) setActiveSessionId(null)
+    deleteMutation.mutate(id)
   }
+
+  const chatReady = !!activeId
+  const showSkeleton = sessionsQuery.isLoading || (sessions.length === 0 && createMutation.isPending)
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
+      {/* 左侧会话列表 */}
       <div
         style={{
           width: 240,
-          borderRight: '1px solid #f0f0f0',
+          flexShrink: 0,
+          borderRight: '1px solid var(--border)',
           background: 'var(--bg-card)',
           display: 'flex',
           flexDirection: 'column',
+          minHeight: 0,
         }}
       >
-        <Button long type="primary" style={{ margin: 12 }} onClick={newSession}>
-          + 新对话
-        </Button>
-        <div style={{ overflow: 'auto', flex: 1 }}>
-          {sessions.map((s) => (
-            <div
-              key={s.id}
-              onClick={() => setActiveId(s.id)}
-              style={{
-                padding: '10px 16px',
-                cursor: 'pointer',
-                background: s.id === activeId ? 'var(--brand-100)' : 'transparent',
-                color: s.id === activeId ? 'var(--brand-500)' : 'var(--text-1)',
-                fontSize: 14,
-              }}
-            >
-              {s.title}
-            </div>
-          ))}
+        <div style={{ padding: 12 }}>
+          <Button long type="primary" disabled={createMutation.isPending} onClick={() => createMutation.mutate()}>
+            <IconPlus /> 新建会话
+          </Button>
+        </div>
+        <div className="care-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          <AsyncState
+            loading={sessionsQuery.isLoading}
+            error={sessionsQuery.error}
+            onRetry={() => void queryClient.invalidateQueries({ queryKey: ['sessions'] })}
+            isEmpty={sessions.length === 0}
+            empty={<div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>暂无会话</div>}
+          >
+            {sessions.map((s) => {
+              const sid = sessionKey(s)
+              const active = sid === activeSessionId
+              return (
+                <div
+                  key={sid}
+                  onClick={() => setActiveSessionId(sid)}
+                  style={{
+                    padding: '10px 12px 10px 16px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    background: active ? 'var(--brand-100)' : 'transparent',
+                    borderLeft: active ? '3px solid var(--brand-500)' : '3px solid transparent',
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: active ? 'var(--brand-500)' : 'var(--text-1)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        fontWeight: active ? 600 : 400,
+                      }}
+                    >
+                      {s.title || '新对话'}
+                    </div>
+                    {s.created_at && (
+                      <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
+                        {formatDate(s.created_at)}
+                      </div>
+                    )}
+                  </div>
+                  <Popconfirm
+                    title="删除该会话？"
+                    okText="删除"
+                    cancelText="取消"
+                    onOk={() => onDelete(sid)}
+                  >
+                    <Button
+                      size="mini"
+                      type="text"
+                      status="danger"
+                      icon={<IconDelete />}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ visibility: active ? 'visible' : 'hidden' }}
+                    />
+                  </Popconfirm>
+                </div>
+              )
+            })}
+          </AsyncState>
         </div>
       </div>
 
+      {/* 右侧对话区 */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        {riskLevel === 'hitl' && (
-          <div
-            style={{
-              background: '#fff3e8',
-              color: 'var(--warning)',
-              padding: '8px 24px',
-              fontSize: 13,
-              borderBottom: '1px solid #ffd9a8',
-            }}
-          >
-            ⚠️ 本次会话已标记为高风险，转人工医生复核。
-          </div>
-        )}
-        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-          {messages.length === 0 ? (
-            <EmptyState onExample={() => submit('最近化验单说贫血，需要注意什么？')} />
+        <div
+          style={{
+            height: 52,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '0 20px',
+            borderBottom: '1px solid var(--border)',
+            background: 'var(--bg-card)',
+          }}
+        >
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>
+            {activeSession?.title || '智能问诊'}
+          </span>
+          {intent && <Tag color="arcoblue" size="small">{intentLabel(intent)}</Tag>}
+          {riskLevel && (
+            <Tag
+              size="small"
+              color={riskLevel === 'critical' ? 'red' : riskLevel === 'urgent' ? 'orange' : 'green'}
+            >
+              {RISK_LABEL[riskLevel]}
+            </Tag>
+          )}
+        </div>
+
+        <div ref={scrollRef} className="care-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 24px' }}>
+          {showSkeleton ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 24 }}>
+              <div className="care-skeleton-bar" style={{ height: 52 }} />
+              <div className="care-skeleton-bar" style={{ height: 52 }} />
+            </div>
+          ) : messages.length === 0 ? (
+            <EmptyState onExample={() => submit('最近化验单提示贫血，需要注意什么？')} />
           ) : (
             messages.map((m) => <StreamMessage key={m.id} message={m} />)
           )}
         </div>
-        <div style={{ borderTop: '1px solid #f0f0f0', padding: 16, display: 'flex', gap: 8 }}>
+
+        <div
+          style={{
+            borderTop: '1px solid var(--border)',
+            padding: 16,
+            display: 'flex',
+            gap: 8,
+            alignItems: 'flex-end',
+            background: 'var(--bg-card)',
+          }}
+        >
           <Input.TextArea
             value={input}
             onChange={setInput}
-            disabled={loading}
-            placeholder="描述您的症状，回车发送…"
+            disabled={!chatReady || loading}
+            placeholder={chatReady ? '描述您的症状，回车发送…' : '会话创建中，请稍候…'}
             autoSize={{ minRows: 1, maxRows: 4 }}
             onPressEnter={() => submit(input)}
+            style={{ flex: 1 }}
           />
-          <Button type="primary" loading={loading} disabled={!input.trim()} onClick={() => submit(input)}>
-            发送
-          </Button>
+          {loading ? (
+            <Button type="primary" status="warning" icon={<IconStop />} onClick={stop}>
+              停止
+            </Button>
+          ) : (
+            <Button type="primary" disabled={!chatReady || !input.trim()} onClick={() => submit(input)}>
+              发送
+            </Button>
+          )}
         </div>
       </div>
     </div>
