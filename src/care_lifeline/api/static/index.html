@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Care-LifeLine 医疗智能体</title>
+  <style>
+    body { font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
+    header { background: #0e7490; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
+    main { max-width: 860px; margin: 16px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; }
+    #login.hidden, #app.hidden { display: none; }
+    input, textarea, button { font-size: 14px; padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; }
+    button { background: #0e7490; color: #fff; border: none; cursor: pointer; }
+    #messages { white-space: pre-wrap; min-height: 120px; max-height: 360px; overflow-y: auto; }
+    .msg { margin: 6px 0; padding: 8px 10px; border-radius: 8px; }
+    .user { background: #e0f2fe; }
+    .bot { background: #ecfdf5; }
+    .hitl { background: #fef3c7; }
+    .meta { color: #64748b; font-size: 12px; }
+    .row { display: flex; gap: 8px; }
+    .row input { flex: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Care-LifeLine · 医疗智能体</strong>
+    <span id="who"></span>
+  </header>
+
+  <main>
+    <section id="login" class="card">
+      <h3>登录</h3>
+      <div class="row">
+        <input id="username" placeholder="用户名" value="demo" />
+        <input id="password" type="password" placeholder="密码" value="demo123" />
+        <button onclick="login()">登录</button>
+      </div>
+      <p class="meta" id="login-err"></p>
+    </section>
+
+    <section id="app" class="card hidden">
+      <div class="row">
+        <input id="session" placeholder="会话 ID（任意字符串，复用可续聊）" value="sess-1" />
+        <button onclick="loadSessions()">刷新会话</button>
+      </div>
+      <div id="sessions" class="meta"></div>
+      <hr />
+      <div id="messages"></div>
+      <div class="row">
+        <input id="input" placeholder="描述您的症状或问题…" onkeydown="if(event.key==='Enter')send()" />
+        <button onclick="send()">发送</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let token = "";
+    const auth = () => ({ Authorization: "Bearer " + token });
+
+    async function login() {
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+      const resp = await fetch("/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ username, password }),
+      });
+      if (!resp.ok) {
+        document.getElementById("login-err").textContent = "登录失败：用户名或密码错误";
+        return;
+      }
+      const data = await resp.json();
+      token = data.access_token;
+      document.getElementById("who").textContent = "👤 " + data.username;
+      document.getElementById("login").classList.add("hidden");
+      document.getElementById("app").classList.remove("hidden");
+      loadSessions();
+    }
+
+    async function loadSessions() {
+      const resp = await fetch("/v1/sessions", { headers: auth() });
+      if (!resp.ok) return;
+      const items = await resp.json();
+      document.getElementById("sessions").textContent =
+        "历史会话：" + (items.map((i) => i.session_id).join(", ") || "无");
+    }
+
+    async function send() {
+      const sessionId = document.getElementById("session").value || "sess-1";
+      const text = document.getElementById("input").value.trim();
+      if (!text) return;
+      document.getElementById("input").value = "";
+      addMsg("user", text);
+
+      const resp = await fetch("/v1/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...auth() },
+        body: JSON.stringify({ session_id: sessionId, message: text }),
+      });
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let botText = "";
+      let isHitl = false;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop();
+        for (const block of events) {
+          const m = block.match(/^event: (.+)\ndata: (.+)$/s);
+          if (!m) continue;
+          const event = m[1];
+          const data = JSON.parse(m[2]);
+          if (event === "meta") {
+            // 跳过
+          } else if (event === "token") {
+            botText += data.text;
+          } else if (event === "hitl") {
+            isHitl = true;
+          } else if (event === "done") {
+            addMsg(isHitl ? "hitl" : "bot", botText);
+            botText = "";
+            isHitl = false;
+          }
+        }
+      }
+    }
+
+    function addMsg(role, text) {
+      const div = document.createElement("div");
+      div.className = "msg " + role;
+      div.textContent = (role === "user" ? "我：" : role === "hitl" ? "⚠️ 人工接管：" : "助手：") + text;
+      document.getElementById("messages").appendChild(div);
+      document.getElementById("messages").scrollTop = 1e9;
+    }
+  </script>
+</body>
+</html>
