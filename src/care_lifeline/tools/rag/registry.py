@@ -7,7 +7,7 @@ from care_lifeline.config import get_settings
 from care_lifeline.tools.rag.chunker import Chunk
 from care_lifeline.tools.rag.embeddings import EmbeddingPort, LocalEmbedding, MockEmbedding
 from care_lifeline.tools.rag.index_builder import build_index
-from care_lifeline.tools.rag.reranker import MockReranker, Reranker
+from care_lifeline.tools.rag.reranker import CrossEncoderReranker, MockReranker, Reranker
 from care_lifeline.tools.rag.retriever import HybridRetriever, SimpleBM25
 from care_lifeline.tools.rag.store import MemoryVectorStore, VectorStore
 
@@ -28,9 +28,7 @@ def _make_store(embedding: EmbeddingPort) -> VectorStore:
 
         from care_lifeline.tools.rag.qdrant_store import QdrantVectorStore
 
-        client = QdrantClient(
-            url=settings.qdrant_url, api_key=settings.qdrant_api_key or None
-        )
+        client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key or None)
         return QdrantVectorStore(client, settings.rag_collection, embedding.dim, embedding)
     return MemoryVectorStore(embedding.dim)
 
@@ -46,12 +44,15 @@ def build_report_retriever() -> tuple[HybridRetriever, Reranker, list[Chunk]] | 
     if not _GUIDELINE_DIR.exists():
         return None
     try:
+        settings = get_settings()
         embedding = _make_embedding()
         store = _make_store(embedding)
         bm25 = SimpleBM25()
         chunks = build_index(_GUIDELINE_DIR, store, embedding, bm25)
         if not chunks:
             return None
-        return HybridRetriever(store, embedding, bm25, k=5), MockReranker(), chunks
+        # real 模式（rag_enabled）启用 cross-encoder 精排；mock 用保序精排保持零依赖。
+        reranker: Reranker = CrossEncoderReranker() if settings.rag_enabled else MockReranker()
+        return HybridRetriever(store, embedding, bm25, k=5), reranker, chunks
     except Exception:  # backend/embedding unavailable -> degrade to static citation
         return None

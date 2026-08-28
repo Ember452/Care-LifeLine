@@ -10,12 +10,15 @@ class EmbeddingPort(ABC):
     dim: int
 
     @abstractmethod
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        ...
+    def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
 class MockEmbedding(EmbeddingPort):
-    """Deterministic, dependency-free embedding for tests/offline runs."""
+    """Deterministic, dependency-free embedding for tests/offline runs.
+
+    按「字符袋」构造向量：同一字符无论出现在文本何处都累加到同一维
+    （位置由字符哈希决定），使余弦相似度反映真实字符重叠度，供检索回归可测。
+    """
 
     def __init__(self, dim: int = 64) -> None:
         self.dim = dim
@@ -25,9 +28,9 @@ class MockEmbedding(EmbeddingPort):
 
     def _vector(self, text: str) -> list[float]:
         vec = [0.0] * self.dim
-        for i, ch in enumerate(text):
+        for ch in text:
             digest = hashlib.sha256(ch.encode("utf-8")).hexdigest()
-            vec[i % self.dim] += (int(digest, 16) % 1000) / 1000.0
+            vec[int(digest, 16) % self.dim] += 1.0
         norm = sum(v * v for v in vec) ** 0.5 or 1.0
         return [v / norm for v in vec]
 

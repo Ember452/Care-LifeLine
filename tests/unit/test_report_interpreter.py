@@ -43,3 +43,26 @@ def test_mock_returns_citations_when_retriever_provided() -> None:
         result = MockReportInterpreter().interpret("血压150", retriever)
         assert result.citations
         assert any("高血压" in c.snippet for c in result.citations)
+
+
+def test_mock_one_line_multiple_metrics_parses_all() -> None:
+    # P1-11：一行多指标必须全部解析出来（之前只解析第一个）。
+    text = "血压：150/95 mmHg（参考 90-140），空腹血糖：7.8 mmol/L（参考 3.9-6.1）偏高"
+    result = MockReportInterpreter().interpret(text)
+    by_name = {f.name: f for f in result.fields}
+    assert set(by_name) == {"血压", "空腹血糖"}
+    assert by_name["空腹血糖"].abnormal is True
+    assert by_name["血压"].reference == "90-140"
+
+
+def test_citation_has_real_source_rejects_placeholder() -> None:
+    from care_lifeline.graph.state import Citation
+    from care_lifeline.tools.report_interpreter import citation_has_real_source
+
+    assert (
+        citation_has_real_source(Citation(index=0, source="hypertension.md", snippet="x")) is True
+    )
+    assert citation_has_real_source({"source": "diabetes.md", "snippet": "y"}) is True
+    assert citation_has_real_source(Citation(index=0, source="临床检验指南", snippet="x")) is False
+    assert citation_has_real_source({"source": "", "snippet": "y"}) is False
+    assert citation_has_real_source({"snippet": "y"}) is False

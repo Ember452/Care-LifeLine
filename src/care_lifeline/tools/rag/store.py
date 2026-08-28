@@ -9,12 +9,10 @@ class VectorStore(ABC):
     """Abstraction over a vector backend (in-memory or Qdrant)."""
 
     @abstractmethod
-    def add(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
-        ...
+    def add(self, chunks: list[Chunk], vectors: list[list[float]]) -> None: ...
 
     @abstractmethod
-    def search(self, vector: list[float], top_k: int = 5) -> list[tuple[Chunk, float]]:
-        ...
+    def search(self, vector: list[float], top_k: int = 5) -> list[tuple[Chunk, float]]: ...
 
 
 class MemoryVectorStore(VectorStore):

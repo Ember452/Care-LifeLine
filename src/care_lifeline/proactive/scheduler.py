@@ -3,13 +3,20 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import tempfile
+import time
 from pathlib import Path
 
 from care_lifeline.config import get_settings
 from care_lifeline.memory import patient_memory
 from care_lifeline.proactive.trigger import Reminder, evaluate
 
-_LOCK_PATH = Path(os.getenv("CARE_TMP_DIR", "")) / ".care_proactive_lock"
+# 锁文件默认落在系统临时目录：CWD 相对路径会在项目根残留锁文件，
+# 且不同工作目录下无法互斥（根因见 test_run_once_caches_reminders 的修复）。
+_LOCK_DIR = Path(os.getenv("CARE_TMP_DIR") or tempfile.gettempdir())
+_LOCK_PATH = _LOCK_DIR / ".care_proactive_lock"
+# 陈旧锁回收阈值：进程崩溃后残留的锁超过该时长即可被回收。
+_LOCK_STALE_SECONDS = 300.0
 
 
 class DistributedLock:
@@ -17,16 +24,34 @@ class DistributedLock:
     double-running on the same host. Swap for Redis in multi-host deployments.
     """
 
-    def __init__(self, path: Path = _LOCK_PATH) -> None:
+    def __init__(
+        self, path: Path = _LOCK_PATH, stale_after_seconds: float = _LOCK_STALE_SECONDS
+    ) -> None:
         self._path = path
+        self._stale_after = stale_after_seconds
 
     def acquire(self) -> bool:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
         try:
             fd = os.open(self._path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
-            return False
-        os.close(fd)
+            if not self._is_stale():
+                return False
+            # 陈旧锁回收后重试一次（进程崩溃遗留场景）。
+            with contextlib.suppress(FileNotFoundError):
+                self._path.unlink()
+            return self.acquire()
+        try:
+            os.write(fd, str(time.time()).encode("utf-8"))
+        finally:
+            os.close(fd)
         return True
+
+    def _is_stale(self) -> bool:
+        try:
+            return time.time() - self._path.stat().st_mtime > self._stale_after
+        except FileNotFoundError:
+            return False
 
     def release(self) -> None:
         with contextlib.suppress(FileNotFoundError):

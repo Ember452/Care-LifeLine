@@ -9,8 +9,7 @@ class Reranker(ABC):
     """Re-rank retrieved chunks given the query."""
 
     @abstractmethod
-    def rerank(self, query: str, chunks: list[Chunk]) -> list[Chunk]:
-        ...
+    def rerank(self, query: str, chunks: list[Chunk]) -> list[Chunk]: ...
 
 
 class MockReranker(Reranker):

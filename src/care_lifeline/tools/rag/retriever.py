@@ -77,8 +77,7 @@ class SimpleBM25:
 
 class Retriever(ABC):
     @abstractmethod
-    def retrieve(self, query: str, k: int | None = None) -> list[Chunk]:
-        ...
+    def retrieve(self, query: str, k: int | None = None) -> list[Chunk]: ...
 
 
 class HybridRetriever(Retriever):

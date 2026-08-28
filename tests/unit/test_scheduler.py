@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import time
+
 from care_lifeline.config import get_settings
 from care_lifeline.proactive.scheduler import DistributedLock, get_latest_reminders, run_once
 
@@ -8,6 +12,22 @@ def test_distributed_lock_acquire_release(tmp_path) -> None:
     assert lock.acquire() is False  # 同主机不可重复获得
     lock.release()
     assert lock.acquire() is True
+    lock.release()
+
+
+def test_lock_acquire_creates_parent_dir(tmp_path) -> None:
+    lock = DistributedLock(tmp_path / "nested" / "dir" / ".lock")
+    assert lock.acquire() is True
+    assert lock._path.is_file()
+    lock.release()
+
+
+def test_stale_lock_is_reclaimed(tmp_path) -> None:
+    lock = DistributedLock(tmp_path / ".lock", stale_after_seconds=0.01)
+    assert lock.acquire() is True
+    assert lock.acquire() is False  # 未陈旧前不可重入
+    time.sleep(0.02)
+    assert lock.acquire() is True  # 陈旧锁被回收
     lock.release()
 
 
@@ -29,3 +49,11 @@ def test_run_once_caches_reminders(tmp_path, monkeypatch) -> None:
     assert 1 in snapshot
     assert snapshot[1]  # 150 > 140 触发提醒
     assert get_latest_reminders(1) == snapshot[1]
+
+
+def test_default_lock_path_is_absolute_not_cwd() -> None:
+    import care_lifeline.proactive.scheduler as scheduler_mod
+
+    lock = scheduler_mod.DistributedLock()
+    assert lock._path.is_absolute()
+    assert str(lock._path) != ".care_proactive_lock"

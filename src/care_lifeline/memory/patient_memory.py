@@ -5,7 +5,53 @@ from datetime import datetime
 from sqlalchemy import select
 
 from care_lifeline.db.engine import get_sessionmaker
-from care_lifeline.db.models import PatientMetric
+from care_lifeline.db.models import Patient, PatientMetric
+
+
+def ensure_patient(patient_id: int, name: str | None = None) -> Patient:
+    """确保患者行存在（修 P2-10：避免 patient_metrics 外键悬空）。
+
+    Args:
+        patient_id: 患者主键。
+        name: 患者名；仅在新建患者行时使用。
+
+    Returns:
+        已存在或新建的患者行。
+    """
+    maker = get_sessionmaker()
+    with maker() as session:
+        patient = session.get(Patient, patient_id)
+        if patient is not None:
+            return patient
+        patient = Patient(id=patient_id, name=name or f"患者{patient_id}")
+        session.add(patient)
+        session.commit()
+        session.refresh(patient)
+        return patient
+
+
+def create_patient(name: str, age: int | None = None, gender: str | None = None) -> Patient:
+    """新建患者并返回，供 ``POST /v1/patients`` 使用。
+
+    Note:
+        ``age`` / ``gender`` 暂不入库（schema 无对应列），仅做入参校验，
+        避免为展示性字段改动数据模型。
+    """
+    maker = get_sessionmaker()
+    with maker() as session:
+        patient = Patient(name=name)
+        session.add(patient)
+        session.commit()
+        session.refresh(patient)
+        return patient
+
+
+def list_patients() -> list[Patient]:
+    """返回全部患者（按 id 升序）。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        stmt = select(Patient).order_by(Patient.id)
+        return list(session.execute(stmt).scalars().all())
 
 
 def append_metric(
@@ -15,6 +61,7 @@ def append_metric(
     unit: str | None = None,
     measured_at: datetime | None = None,
 ) -> PatientMetric:
+    ensure_patient(patient_id)
     maker = get_sessionmaker()
     with maker() as session:
         metric = PatientMetric(

@@ -15,12 +15,36 @@ class ReportInterpreter(ABC):
     @abstractmethod
     def interpret(
         self, text: str, retriever: Retriever | None = None, reranker: Reranker | None = None
-    ) -> ReportResult:
-        ...
+    ) -> ReportResult: ...
+
+
+# 无检索器时的占位引用来源——不计入「忠实引用」（faithfulness 口径收紧用）。
+PLACEHOLDER_SOURCES: tuple[str, ...] = ("临床检验指南", "指南")
+
+
+def citation_has_real_source(citation: object) -> bool:
+    """判断一条引用是否携带真实来源（faithfulness 严格口径）。
+
+    引用必须含非空的 ``source`` 且不能是占位来源，才算「忠实引用」；
+    用于评测套件与管理后台指标，防止 ``[``/``参考``/``引用`` 恒为 1.0 的假指标。
+
+    Args:
+        citation: ``Citation`` 实例或 ``{"source": ...}`` dict。
+
+    Returns:
+        是否携带真实来源。
+    """
+    source = getattr(citation, "source", None)
+    if source is None and isinstance(citation, dict):
+        source = citation.get("source")
+    return isinstance(source, str) and bool(source) and source not in PLACEHOLDER_SOURCES
 
 
 class MockReportInterpreter(ReportInterpreter):
     """Deterministic, offline extraction for tests/mock mode."""
+
+    # 一行文本内的指标分隔符（P1-11：一行多指标，如「血压：150/95…，空腹血糖：7.8…」）。
+    _SEGMENT_SEP = re.compile(r"[，,；;]")
 
     def interpret(
         self, text: str, retriever: Retriever | None = None, reranker: Reranker | None = None
@@ -35,16 +59,22 @@ class MockReportInterpreter(ReportInterpreter):
             line = raw.strip()
             if not line:
                 continue
-            name, sep, value = self._split(line)
-            if not sep or not name:
-                continue
-            reference = self._reference(value)
-            abnormal = any(
-                k in value for k in ("偏高", "偏低", "异常", "阳性", "升高", "降低", "超标")
-            )
-            fields.append(
-                ReportField(name=name, value=value.strip(), reference=reference, abnormal=abnormal)
-            )
+            for segment in self._SEGMENT_SEP.split(line):
+                segment = segment.strip()
+                if not segment:
+                    continue
+                name, sep, value = self._split(segment)
+                if not sep or not name:
+                    continue
+                reference = self._reference(value)
+                abnormal = any(
+                    k in value for k in ("偏高", "偏低", "异常", "阳性", "升高", "降低", "超标")
+                )
+                fields.append(
+                    ReportField(
+                        name=name, value=value.strip(), reference=reference, abnormal=abnormal
+                    )
+                )
         return fields
 
     @staticmethod

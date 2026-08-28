@@ -28,3 +28,24 @@ def test_append_and_trend(db) -> None:
 
 def test_latest_missing_returns_none(db) -> None:
     assert patient_memory.latest_value(99, "收缩压") is None
+
+
+def test_ensure_patient_creates_and_reuses(db) -> None:
+    first = patient_memory.ensure_patient(7, "王女士")
+    second = patient_memory.ensure_patient(7, "王女士")
+    assert first.id == second.id == 7
+    assert first.name == "王女士"
+
+
+def test_create_patient_and_list(db) -> None:
+    created = patient_memory.create_patient("赵先生")
+    ids = [p.id for p in patient_memory.list_patients()]
+    assert created.id in ids
+    assert any(p.name == "赵先生" for p in patient_memory.list_patients())
+
+
+def test_append_metric_auto_creates_patient_row(db) -> None:
+    # P2-10：直接写指标时患者行自动创建，避免外键悬空。
+    patient_memory.append_metric(42, "空腹血糖", 7.2, "mmol/L")
+    patients = patient_memory.list_patients()
+    assert any(p.id == 42 for p in patients)

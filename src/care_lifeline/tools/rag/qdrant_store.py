@@ -14,9 +14,7 @@ class QdrantVectorStore(VectorStore):
     Qdrant service configured via ``CARE_QDRANT_URL``.
     """
 
-    def __init__(
-        self, client, collection: str, dim: int, embedding: EmbeddingPort
-    ) -> None:
+    def __init__(self, client, collection: str, dim: int, embedding: EmbeddingPort) -> None:
         self._client = client
         self._collection = collection
         self._dim = dim
