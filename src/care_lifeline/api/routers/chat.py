@@ -54,6 +54,7 @@ def _initial_state(message: str) -> AgentState:
         "draft": "",
         "qc_result": None,  # type: ignore[arg-type]
         "hitl_required": False,
+        "report": None,
     }
 
 

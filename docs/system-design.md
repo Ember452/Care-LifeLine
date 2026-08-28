@@ -617,29 +617,38 @@ care-lifeline/
 ## 13. 开发路线图（重排：6 周聚焦主线）
 
 > 原则：**垂直够深 > 水平铺开**。PillboxVision 与深度 Proactive 列为 P2，不做不伤主线。
+> 任务级拆分（Task Mx-y）以 `docs/development-plan.md` 为准（本文仅给方向）。截至 2026-08-28：M0–M2 已交付，下一步 M3。
 
-### M0：工程骨架 + 最小图（1 周）
-- uv + src layout 初始化；Makefile / pre-commit / CI 跑通。
-- `Router → Triage → ReportInterpreter → QC → Responder` 最小图（MemorySaver）。
-- 一个指南 RAG 工具 + 一个 FDA 工具；输出带引用与免责声明。
+### M0：工程骨架（~3 天）
+- uv + src layout 初始化；Makefile / pre-commit / CI 跑通（lint + type + test 门禁）。
+- 目录分层 `api → graph → 能力层(tools/memory)`，`safety/audit` 横切；`config.py`（pydantic-settings）。
 
-### M1：质控 + 持久化（2 周，灵魂）
-- `rules_engine` + `qc_agent` 双层把关（规则单测 100% 覆盖 + 阈值校准流程）。
-- PostgresSaver Checkpointer：会话恢复 + HITL 中断/恢复。
-- PHI 脱敏中间件 + 审计日志（追加写）。
+### M1：最小图 + 流式 API（1.5 周）
+- LLM Provider 抽象（mock/real 双模式）；LangGraph 最小图 `Router → Triage → ReportInterpreter → QC → Responder`。
+- SSE 流式端点（方案 A：整体生成后流式）；前端对话页（流式渲染）。
+- 出口：无 key 端到端 mock 问诊。
 
-### M2：评测基线（1.5 周，简历弹药）
-- 指标口径落地 + 红队集/拒答集（≥50 条自研，标注防泄漏）。
-- ragas faithfulness + 自研 compliance/拒答率；`eval.yml` 评测回归。
-- 输出 MVP 基线数字（对照 §9.2 表格）。
+### M2：质控 + 持久化 + 鉴权（2 周，灵魂）
+- 规则引擎 `rules_engine` + LLM 语义评审 `qc_agent` 双层把关（规则单测 100% 覆盖）。
+- 同步 SQLAlchemy 持久化（会话/消息/审计/QC 命中）+ 跨请求会话恢复；PHI 脱敏入口中间件。
+- JWT 鉴权 + 用户模型；HITL 紧急升级（转人工）+ 前端登录/会话管理。
+- 出口：登录→问诊→断线从列表恢复；qc_rules 覆盖率 100%。
 
-### M3：工程化 + 部署 + 闭环（1.5 周）
-- SSE 流式（先方案 A，规则层前置为 M3 收尾或 P2）。
-- docker compose 本地一键跑；API 鉴权 + 限流。
-- 数据闭环最小链路：feedback 写入 → 用例沉淀脚本。
+### M3：报告解读 + 慢病管理（2 周）
+- RAG 管线（中文语义分块 + 混合检索 BM25+向量 + rerank）；报告结构化解读。
+- 患者纵向记忆 + 指标存储；Proactive 最小触发（事件/定时 + 分布式锁）。
+- 前端报告页 + 慢病面板。出口：粘贴报告→结构化解读+异常标注+引用；趋势图。
 
-### P2（不进 6 周主线，按时间可选）
-- PillboxVision 管线；Proactive 事件驱动 + 分布式锁；方案 C 流式质控；语义缓存。
+### M4：HITL 工作台 + 管理后台（2 周）
+- 复核队列 API；反馈→规则/用例沉淀脚本；评测 + 审计 + 规则 API。
+- 前端 HITL 工作台 + 管理后台。出口：high-risk 触发→工作台待复核→医生驳回/通过→状态更新；反馈入数据集。
+
+### M5：评测 + 部署 + 打磨（1.5 周）
+- eval 套件完整化（ragas faithfulness + 自研 compliance/拒答率 + 红队/拒答集防泄漏）；评测回归 CI。
+- docker compose 全栈编排；前端设计打磨。出口：`make up` 一键全栈 + `make eval` 基线报告。
+
+### P2（不进主线，按时间可选）
+- PillboxVision 管线；Proactive 深度事件驱动；方案 C 流式质控；语义缓存。
 
 ---
 

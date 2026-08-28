@@ -1,12 +1,33 @@
-from care_lifeline.graph.state import AgentState, Citation, last_user_text
+from __future__ import annotations
+
+from care_lifeline.config import get_settings
+from care_lifeline.graph.state import AgentState, ReportResult, last_user_text
+from care_lifeline.tools.report_interpreter import (
+    LLMReportInterpreter,
+    MockReportInterpreter,
+    ReportInterpreter,
+)
 
 
 def report_interpreter_node(state: AgentState, provider) -> dict:
     text = last_user_text(state["messages"])
-    draft = provider.complete(messages=[{"role": "user", "content": text}])
-    citation = Citation(
-        index=0,
-        source="临床检验指南",
-        snippet="请结合参考范围判断指标偏高/偏低，并由医生综合病史评估。",
+    mode = get_settings().llm_mode
+    interpreter: ReportInterpreter = (
+        LLMReportInterpreter(provider) if mode == "real" else MockReportInterpreter()
     )
-    return {"draft": draft, "citations": [citation]}
+    result = interpreter.interpret(text)
+    return {"report": result, "citations": result.citations, "draft": _summarize(result)}
+
+
+def _summarize(result: ReportResult) -> str:
+    if not result.fields:
+        return "未从文本中解析出结构化指标，建议由医生人工判读报告。"
+    lines = []
+    for field in result.fields:
+        line = f"- {field.name}：{field.value}"
+        if field.reference:
+            line += f"（参考：{field.reference}）"
+        if field.abnormal:
+            line += " ⚠️异常"
+        lines.append(line)
+    return "报告解读：\n" + "\n".join(lines)

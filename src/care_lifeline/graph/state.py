@@ -17,6 +17,18 @@ class QCResult(BaseModel):
     violations: list[str] = Field(default_factory=list)
 
 
+class ReportField(BaseModel):
+    name: str
+    value: str
+    reference: str | None = None
+    abnormal: bool = False
+
+
+class ReportResult(BaseModel):
+    fields: list[ReportField] = Field(default_factory=list)
+    citations: list[Citation] = Field(default_factory=list)
+
+
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     patient_id: str | None
@@ -26,6 +38,7 @@ class AgentState(TypedDict):
     draft: str
     qc_result: QCResult | None
     hitl_required: bool
+    report: ReportResult | None
 
 
 def last_user_text(messages: list[BaseMessage]) -> str:
