@@ -13,7 +13,7 @@ test:             ## 单元测试
 	$(PYTHON) pytest tests/unit -q --cov=care_lifeline --cov-report=term-missing
 
 eval:             ## 评测运行（输出 Markdown 报告）
-	$(PYTHON) pytest tests/eval -q --eval-report
+	$(PYTHON) python -m care_lifeline.eval.suite
 
 lint:             ## Lint 检查
 	$(PYTHON) ruff check src tests
