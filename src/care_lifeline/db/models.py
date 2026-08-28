@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -99,3 +100,16 @@ class AuditLog(Base):
     event: Mapped[str] = mapped_column(String(64))
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PatientMetric(Base):
+    """Longitudinal patient metric time-series (M3-3)."""
+
+    __tablename__ = "patient_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"))
+    name: Mapped[str] = mapped_column(String(64))
+    value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    measured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -67,3 +67,13 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     detail        TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS patient_metrics (
+    id            SERIAL PRIMARY KEY,
+    patient_id    INTEGER NOT NULL REFERENCES patients(id),
+    name          VARCHAR(64) NOT NULL,
+    value         DOUBLE PRECISION NOT NULL,
+    unit          VARCHAR(32),
+    measured_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_patient_metrics_patient ON patient_metrics(patient_id);

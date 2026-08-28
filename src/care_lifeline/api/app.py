@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from care_lifeline.api.middleware.phi import PHIMiddleware
-from care_lifeline.api.routers import auth, chat, hitl
+from care_lifeline.api.routers import auth, chat, hitl, patients, reports
 from care_lifeline.config import get_settings
 from care_lifeline.db import session_store
 from care_lifeline.db.engine import init_db
@@ -18,6 +18,8 @@ app.add_middleware(PHIMiddleware)
 app.include_router(chat.router, prefix="/v1")
 app.include_router(auth.router)
 app.include_router(hitl.router)
+app.include_router(reports.router)
+app.include_router(patients.router)
 
 
 @app.get("/", response_class=FileResponse)
