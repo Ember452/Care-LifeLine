@@ -25,7 +25,7 @@ class QualityRule(Protocol):
 
 
 @dataclass
-class Rule:
+class Rule(QualityRule):
     code: str
     description: str
     severity: Severity
@@ -69,7 +69,7 @@ class CitationRule(Rule):
         return None
 
 
-def load_ruleset(version: int = 1) -> list[QualityRule]:
+def _rule_defs(version: int = 1) -> list[Rule]:
     if version == 1:
         return [
             OffScopeRule("off_scope", "越界请求拒答", Severity.BLOCKING),
@@ -80,9 +80,15 @@ def load_ruleset(version: int = 1) -> list[QualityRule]:
     raise ValueError(f"未知规则集版本: {version}")
 
 
+def load_ruleset(version: int = 1) -> list[QualityRule]:
+    return list(_rule_defs(version))
+
+
 def evaluate_all(rules: list[QualityRule], draft: str, ctx: dict) -> list[Violation]:
     violations: list[Violation] = []
     for rule in rules:
+        if not is_rule_enabled(rule.code):
+            continue
         violation = rule.evaluate(draft, ctx)
         if violation is None:
             continue
@@ -90,3 +96,26 @@ def evaluate_all(rules: list[QualityRule], draft: str, ctx: dict) -> list[Violat
             return [violation]
         violations.append(violation)
     return violations
+
+
+_ENABLED: dict[str, bool] = {rule.code: True for rule in _rule_defs(1)}
+
+
+def set_rule_enabled(code: str, enabled: bool) -> None:
+    _ENABLED[code] = enabled
+
+
+def is_rule_enabled(code: str) -> bool:
+    return _ENABLED.get(code, True)
+
+
+def list_rules() -> list[dict]:
+    return [
+        {
+            "code": rule.code,
+            "description": rule.description,
+            "severity": rule.severity.value,
+            "enabled": is_rule_enabled(rule.code),
+        }
+        for rule in _rule_defs(1)
+    ]
