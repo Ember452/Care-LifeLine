@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 
 from langchain_core.messages import HumanMessage
 
@@ -10,13 +11,22 @@ from care_lifeline.eval.metrics import compute_metrics
 from care_lifeline.graph.builder import build_graph
 from care_lifeline.graph.state import AgentState
 from care_lifeline.llm.mock_provider import MockProvider
-from care_lifeline.tools.report_interpreter import MockReportInterpreter
+from care_lifeline.tools.rag.registry import build_report_retriever
+from care_lifeline.tools.report_interpreter import (
+    MockReportInterpreter,
+    citation_has_real_source,
+)
 
 DATA_DIR = os.path.join("data", "eval")
+
+# 数据飞轮：workbench 审核沉淀的反馈样本集（P2-17）。
+_FEEDBACK_DATASET = "feedback_cases"
 
 
 def _load(name: str) -> list[dict]:
     path = os.path.join(DATA_DIR, f"{name}.json")
+    if not os.path.exists(path):
+        return []
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
@@ -37,7 +47,10 @@ def _initial(text: str) -> AgentState:
 
 
 def _run_graph(text: str) -> dict:
+    """跑一次图并记录真实端到端延迟（P1-9：不再硬编码 0）。"""
+    start = time.perf_counter()
     state = asyncio.run(build_graph(MockProvider()).ainvoke(_initial(text)))
+    latency_ms = (time.perf_counter() - start) * 1000
     qc = state["qc_result"]
     status = qc.status if qc is not None else "passed"
     draft = state["draft"]
@@ -45,16 +58,48 @@ def _run_graph(text: str) -> dict:
         "blocked": status in ("refused", "hitl"),
         "hitl": status == "hitl",
         "has_disclaimer": "免责" in draft,
-        "has_citation": ("[" in draft) or ("参考" in draft) or ("引用" in draft),
-        "latency_ms": 0,
+        # 忠实引用口径收紧：必须含真实 source，而不是「出现了 [ / 参考 / 引用」。
+        "has_citation": any(citation_has_real_source(c) for c in state.get("citations", [])),
+        "latency_ms": round(latency_ms, 2),
     }
+
+
+def _run_report(text: str) -> dict:
+    """报告解读用例：优先用真实指南语料检索，保证引用含真实 source。"""
+    start = time.perf_counter()
+    interpreter = MockReportInterpreter()
+    bundle = build_report_retriever()
+    parsed = (
+        interpreter.interpret(text, bundle[0], bundle[1]) if bundle else interpreter.interpret(text)
+    )
+    latency_ms = (time.perf_counter() - start) * 1000
+    return {
+        "category": "report",
+        "expect": "answer",
+        "blocked": False,
+        "hitl": False,
+        "has_disclaimer": False,
+        "has_citation": any(citation_has_real_source(c) for c in parsed.citations),
+        "latency_ms": round(latency_ms, 2),
+    }
+
+
+def _run_feedback(case: dict) -> dict:
+    """数据飞轮回归（P2-17）：把审核沉淀的反馈样本重新过一遍图。"""
+    row = _run_graph(case.get("input", ""))
+    row["category"] = "feedback"
+    # reject 表示该回复应当被拦截；approve/edit 表示应当产出可用回答。
+    row["expect"] = "refuse" if case.get("decision") == "reject" else "answer"
+    return row
 
 
 def run_suite(report_path: str = "eval_report.md") -> dict:
     """Run the eval datasets through the mock stack and emit a Markdown report.
 
-    Datasets (redteam / refusal / report_cases) live under data/eval and are
-    NOT used for RAG retrieval, so they never leak into prompt context.
+    Datasets (redteam / refusal / report_cases / feedback_cases) live under
+    data/eval and are NOT used for RAG retrieval, so they never leak into
+    prompt context. Feedback cases are clinician-approved samples appended by
+    the workbench flywheel (P2-17).
     """
     results: list[dict] = []
     for ds in ("redteam", "refusal"):
@@ -64,20 +109,11 @@ def run_suite(report_path: str = "eval_report.md") -> dict:
             row["expect"] = "refuse"
             results.append(row)
 
-    interpreter = MockReportInterpreter()
     for case in _load("report_cases"):
-        parsed = interpreter.interpret(case["text"])
-        results.append(
-            {
-                "category": "report",
-                "expect": "answer",
-                "blocked": False,
-                "hitl": False,
-                "has_disclaimer": False,
-                "has_citation": bool(parsed.citations),
-                "latency_ms": 0,
-            }
-        )
+        results.append(_run_report(case["text"]))
+
+    for case in _load(_FEEDBACK_DATASET):
+        results.append(_run_feedback(case))
 
     metrics = compute_metrics(results)
     report = render_markdown(results, metrics)

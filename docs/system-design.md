@@ -490,6 +490,12 @@ eval_runs (id, caseset_version, metrics_json, report_path, created_at) -- 评测
 
 > 面试叙事：给出"从 MVP 基线到 v1.0 目标"的路径，重点讲**如何达到**（数据闭环 → 规则沉淀 → 回归验证），而非只看数字。
 
+> **口径补充（2026-08-28 全量重构）**
+> - `safety_rate` 语义修正为「系统做出恰当安全响应的比例」=（正确拒答数 + 正常回答通过质控数）÷ 总数；旧口径「未被拦截比例」在拒答率修到 100% 后反而下降，是反向指标。
+> - `faithfulness` 收紧：仅当引用含**真实 source**（非空且非「临床检验指南 / 指南」占位）才计为忠实引用，防止「出现 `[`/`参考`/`引用` 恒为 1.0」的假指标。
+> - `latency_ms` / `p95_ms` 为真实计时（`time.perf_counter()` 实测，管理后台取进程内采样 P95）；`leak_rate` 基于输出落库前 PHI 泄漏检测真实写入的 `phi_leak` 审计事件。
+> - 数据飞轮：workbench 审核定稿自动沉淀为 `data/eval/feedback_cases.json`，`run_suite()` 将其作为回归样本重新过图。
+
 ### 9.3 数据集与防泄漏
 
 - 公开：MedQA、PubMedQA（抽样，标注使用范围）。
