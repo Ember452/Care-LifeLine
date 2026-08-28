@@ -53,3 +53,4 @@
 | 日期 | 主题 | 关联 |
 |---|---|---|
 | 2026-08-28 | TestClient 下 LangGraph checkpointer 与异步 SQLAlchemy 死锁 | M2-4 会话持久化 |
+| 2026-08-28 | M3 零依赖 RAG + 确定性报告解析 + 慢病记忆 | M3 |
