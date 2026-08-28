@@ -40,5 +40,8 @@ logs/
 *.sqlite
 *.sqlite3
 
+# 评测报告产物（make eval 生成）
+eval_report.md
+
 # Agent 工具记忆（非项目产物）
 .workbuddy/
