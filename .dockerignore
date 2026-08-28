@@ -1,0 +1,11 @@
+.git
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+care.db
+care.db-wal
+care.db-shm
+eval_report.md
+data/eval/feedback_cases.json
