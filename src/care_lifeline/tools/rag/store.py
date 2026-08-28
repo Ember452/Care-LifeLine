@@ -1,9 +1,23 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+
 from care_lifeline.tools.rag.chunker import Chunk
 
 
-class MemoryVectorStore:
+class VectorStore(ABC):
+    """Abstraction over a vector backend (in-memory or Qdrant)."""
+
+    @abstractmethod
+    def add(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
+        ...
+
+    @abstractmethod
+    def search(self, vector: list[float], top_k: int = 5) -> list[tuple[Chunk, float]]:
+        ...
+
+
+class MemoryVectorStore(VectorStore):
     """In-memory cosine vector store; keeps RAG testable without Qdrant."""
 
     def __init__(self, dim: int) -> None:

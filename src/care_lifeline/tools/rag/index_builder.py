@@ -5,12 +5,12 @@ from pathlib import Path
 from care_lifeline.tools.rag.chunker import Chunk, chunk_text
 from care_lifeline.tools.rag.embeddings import EmbeddingPort
 from care_lifeline.tools.rag.retriever import SimpleBM25
-from care_lifeline.tools.rag.store import MemoryVectorStore
+from care_lifeline.tools.rag.store import VectorStore
 
 
 def build_index(
     guideline_dir: str | Path,
-    store: MemoryVectorStore,
+    store: VectorStore,
     embedding: EmbeddingPort,
     bm25: SimpleBM25,
     glob: str = "*.md",

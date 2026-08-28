@@ -69,7 +69,9 @@ def test_health_ok(client: TestClient) -> None:
 def test_index_serves_html(client: TestClient) -> None:
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "Care-LifeLine" in resp.text
+    assert "text/html" in resp.headers["content-type"]
+    # 根路径提供前端：React SPA（<div id="root">）或静态页（Care-LifeLine）
+    assert "<div id=\"root\">" in resp.text or "Care-LifeLine" in resp.text
 
 
 def test_sessions_requires_auth(client: TestClient) -> None:

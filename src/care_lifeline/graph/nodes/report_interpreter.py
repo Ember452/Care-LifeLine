@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from care_lifeline.config import get_settings
 from care_lifeline.graph.state import AgentState, ReportResult, last_user_text
+from care_lifeline.tools.rag.registry import build_report_retriever
 from care_lifeline.tools.report_interpreter import (
     LLMReportInterpreter,
     MockReportInterpreter,
@@ -15,7 +16,10 @@ def report_interpreter_node(state: AgentState, provider) -> dict:
     interpreter: ReportInterpreter = (
         LLMReportInterpreter(provider) if mode == "real" else MockReportInterpreter()
     )
-    result = interpreter.interpret(text)
+    bundle = build_report_retriever()
+    result = (
+        interpreter.interpret(text, bundle[0], bundle[1]) if bundle else interpreter.interpret(text)
+    )
     return {"report": result, "citations": result.citations, "draft": _summarize(result)}
 
 

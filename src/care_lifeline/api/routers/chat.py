@@ -14,8 +14,9 @@ from care_lifeline.api.security import CurrentUser, get_current_user
 from care_lifeline.config import get_settings
 from care_lifeline.db import session_store
 from care_lifeline.graph.builder import build_graph
+from care_lifeline.graph.checkpointer import get_checkpointer
 from care_lifeline.graph.state import AgentState
-from care_lifeline.llm.mock_provider import MockProvider
+from care_lifeline.llm.provider import make_provider
 
 
 def _persistence_enabled() -> bool:
@@ -55,6 +56,7 @@ def _initial_state(message: str) -> AgentState:
         "qc_result": None,  # type: ignore[arg-type]
         "hitl_required": False,
         "report": None,
+        "medication_warnings": [],
     }
 
 
@@ -106,8 +108,11 @@ async def chat_stream(
                 if prior:
                     initial["messages"] = prior + initial["messages"]
 
-        graph = build_graph(MockProvider())
-        state = await graph.ainvoke(initial)
+        graph = build_graph(make_provider(), checkpointer=get_checkpointer())
+        config = (
+            {"configurable": {"thread_id": req.session_id}} if get_checkpointer() else None
+        )
+        state = await graph.ainvoke(initial, config=config)
 
         if _persistence_enabled():
             with contextlib.suppress(Exception):

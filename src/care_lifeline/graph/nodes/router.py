@@ -25,11 +25,23 @@ REPORT_KEYWORDS = (
     "转氨酶",
 )
 
+MEDICATION_KEYWORDS = (
+    "相互作用",
+    "用药",
+    "药物冲突",
+    "一起吃",
+    "同时吃",
+    "配伍",
+    "联合用药",
+)
+
 
 def classify_intent(text: str) -> tuple[str, str]:
     """Return ``(risk_level, intent)`` from the latest user message."""
     if any(keyword in text for keyword in EMERGENCY_KEYWORDS):
         return "critical", "emergency"
+    if any(keyword in text for keyword in MEDICATION_KEYWORDS):
+        return "routine", "medication"
     if any(keyword in text for keyword in REPORT_KEYWORDS):
         return "routine", "report"
     return "routine", "triage"

@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 
 from care_lifeline.tools.rag.chunker import Chunk
 from care_lifeline.tools.rag.embeddings import EmbeddingPort
-from care_lifeline.tools.rag.store import MemoryVectorStore
+from care_lifeline.tools.rag.store import VectorStore
 
 
 def _tokenize(text: str) -> list[str]:
@@ -85,7 +85,7 @@ class HybridRetriever(Retriever):
     """Fuse vector + BM25 via Reciprocal Rank Fusion (RRF)."""
 
     def __init__(
-        self, store: MemoryVectorStore, embedding: EmbeddingPort, bm25: SimpleBM25, k: int = 5
+        self, store: VectorStore, embedding: EmbeddingPort, bm25: SimpleBM25, k: int = 5
     ) -> None:
         self._store = store
         self._embedding = embedding
@@ -95,15 +95,17 @@ class HybridRetriever(Retriever):
     def retrieve(self, query: str, k: int | None = None) -> list[Chunk]:
         k = k or self._k
         vector = self._embedding.embed([query])[0]
-        vec_hits = {c.index: s for c, s in self._store.search(vector, k * 2)}
-        lex_hits = {c.index: s for c, s in self._bm25.search(query, k * 2)}
+        vec_hits_list = self._store.search(vector, k * 2)
+        lex_hits_list = self._bm25.search(query, k * 2)
+        vec_hits = {c.index: s for c, s in vec_hits_list}
+        lex_hits = {c.index: s for c, s in lex_hits_list}
         fused: dict[int, float] = {}
         for rank, idx in enumerate(sorted(vec_hits, key=lambda i: -vec_hits[i])):
             fused[idx] = fused.get(idx, 0.0) + 1.0 / (rank + 1 + 60)
         for rank, idx in enumerate(sorted(lex_hits, key=lambda i: -lex_hits[i])):
             fused[idx] = fused.get(idx, 0.0) + 1.0 / (rank + 1 + 60)
-        all_chunks = {c.index: c for c, _ in self._store.search(vector, 1_000_000)}
-        for c, _ in self._bm25.search(query, 1_000_000):
+        all_chunks = {c.index: c for c, _ in vec_hits_list}
+        for c, _ in lex_hits_list:
             all_chunks.setdefault(c.index, c)
         ranked = sorted(fused, key=lambda i: -fused[i])[:k]
         return [all_chunks[i] for i in ranked if i in all_chunks]

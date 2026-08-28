@@ -32,6 +32,7 @@ def _initial(text: str) -> AgentState:
         "qc_result": None,  # type: ignore[arg-type]
         "hitl_required": False,
         "report": None,
+        "medication_warnings": [],
     }
 
 

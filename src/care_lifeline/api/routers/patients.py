@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from care_lifeline.api.security import CurrentUser, get_current_user
 from care_lifeline.memory import patient_memory
-from care_lifeline.proactive import trigger
+from care_lifeline.proactive import scheduler, trigger
 
 router = APIRouter(prefix="/v1/patients", tags=["patients"])
 
@@ -26,4 +26,6 @@ def add_metric(
 
 @router.get("/{patient_id}/reminders", response_model=list[dict])
 def reminders(patient_id: int, user: CurrentUser = Depends(get_current_user)) -> list[dict]:
-    return [r.model_dump() for r in trigger.evaluate(patient_id)]
+    cached = scheduler.get_latest_reminders(patient_id)
+    reminders = cached if cached else trigger.evaluate(patient_id)
+    return [r.model_dump() for r in reminders]

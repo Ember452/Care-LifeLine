@@ -11,5 +11,8 @@ def responder_node(state: AgentState, provider) -> dict:
     if citations:
         refs = "\n".join(f"[{c.index}] {c.source}：{c.snippet}" for c in citations)
         body = f"{body}\n\n参考：\n{refs}"
+    warnings: list[str] = state.get("medication_warnings", [])
+    if warnings:
+        body = f"{body}\n\n用药警示：\n" + "\n".join(warnings)
     body = f"{body}{DISCLAIMER}"
     return {"draft": body, "messages": [AIMessage(body)]}

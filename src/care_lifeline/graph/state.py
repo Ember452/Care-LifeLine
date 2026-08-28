@@ -39,6 +39,7 @@ class AgentState(TypedDict):
     qc_result: QCResult | None
     hitl_required: bool
     report: ReportResult | None
+    medication_warnings: list[str]
 
 
 def last_user_text(messages: list[BaseMessage]) -> str:

@@ -1,6 +1,7 @@
 from langgraph.graph import END, START, StateGraph
 
 from care_lifeline.graph.nodes.hitl import escalate_node
+from care_lifeline.graph.nodes.medication import medication_node
 from care_lifeline.graph.nodes.qc import qc_node
 from care_lifeline.graph.nodes.report_interpreter import report_interpreter_node
 from care_lifeline.graph.nodes.responder import responder_node
@@ -14,7 +15,7 @@ def _route_after_router(state: AgentState) -> str:
     if state.get("hitl_required"):
         return "hitl"
     intent = state.get("intent", "triage")
-    if intent in ("report", "triage"):
+    if intent in ("report", "triage", "medication"):
         return intent
     return "triage"
 
@@ -31,6 +32,7 @@ def build_graph(provider: LLMProvider | None = None, checkpointer=None):
     graph.add_node("router", lambda s: router_node(s, resolved))
     graph.add_node("triage", lambda s: triage_node(s, resolved))
     graph.add_node("report_interpreter", lambda s: report_interpreter_node(s, resolved))
+    graph.add_node("medication", lambda s: medication_node(s, resolved))
     graph.add_node("qc", lambda s: qc_node(s, resolved))
     graph.add_node("hitl", lambda s: escalate_node(s, resolved))
     graph.add_node("responder", lambda s: responder_node(s, resolved))
@@ -39,10 +41,16 @@ def build_graph(provider: LLMProvider | None = None, checkpointer=None):
     graph.add_conditional_edges(
         "router",
         _route_after_router,
-        {"hitl": "hitl", "report": "report_interpreter", "triage": "triage"},
+        {
+            "hitl": "hitl",
+            "report": "report_interpreter",
+            "triage": "triage",
+            "medication": "medication",
+        },
     )
     graph.add_edge("triage", "qc")
     graph.add_edge("report_interpreter", "qc")
+    graph.add_edge("medication", "qc")
     graph.add_edge("hitl", "qc")
     graph.add_edge("qc", "responder")
     graph.add_edge("responder", END)

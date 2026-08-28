@@ -44,3 +44,11 @@ def get_trend(patient_id: int, name: str) -> list[PatientMetric]:
 def latest_value(patient_id: int, name: str) -> float | None:
     trend = get_trend(patient_id, name)
     return trend[-1].value if trend else None
+
+
+def list_patient_ids() -> list[int]:
+    """Return all distinct patient ids that have at least one recorded metric."""
+    maker = get_sessionmaker()
+    with maker() as session:
+        stmt = select(PatientMetric.patient_id).distinct()
+        return list(session.execute(stmt).scalars().all())

@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 class EmbeddingPort(ABC):
     """Embeddings abstraction; mock for tests, SentenceTransformer for real use."""
 
+    dim: int
+
     @abstractmethod
     def embed(self, texts: list[str]) -> list[list[float]]:
         ...
@@ -37,6 +39,7 @@ class LocalEmbedding(EmbeddingPort):
         from sentence_transformers import SentenceTransformer
 
         self._model = SentenceTransformer(model_name)
+        self.dim = self._model.get_sentence_embedding_dimension() or 384
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return self._model.encode(texts, normalize_embeddings=True).tolist()
