@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     feedback_data_path: str = "data/eval/feedback_cases.json"
     # 主动触发调度间隔（秒）
     proactive_interval_seconds: int = Field(default=300, gt=10)
+    # 单会话 token 预算护栏（§10.4）：累计超过即拒绝新请求；0 = 不限额。
+    session_token_budget: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _reject_insecure_secret_in_production(self) -> "Settings":

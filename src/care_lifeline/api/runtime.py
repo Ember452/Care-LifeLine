@@ -105,6 +105,12 @@ def record_token_usage(session_id: str, usage: TokenUsage) -> None:
         _session_tokens[session_id] = usage
 
 
+def session_tokens(session_id: str) -> int:
+    """返回某会话的累计 token 数（未记录过为 0）。"""
+    usage = _session_tokens.get(session_id)
+    return usage.total_tokens if usage is not None else 0
+
+
 def token_summary() -> dict[str, object]:
     """返回 token 用量汇总（全局累计 + 最近会话明细快照）。"""
     with _lock:

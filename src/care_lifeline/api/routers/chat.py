@@ -17,6 +17,7 @@ from care_lifeline.api.runtime import (
     record_node_ms,
     record_qc_status,
     record_token_usage,
+    session_tokens,
 )
 from care_lifeline.api.security import CurrentUser, get_current_user
 from care_lifeline.config import get_settings
@@ -303,6 +304,24 @@ async def chat_stream(
     async def generate() -> AsyncIterator[str]:
         # 断线重连间隔（P2-A：SSE 工程细节补齐）。
         yield "retry: 3000\n\n"
+        # 单会话 token 预算护栏（§10.4）：超限降级为明确错误，不再调用图。
+        # 口径说明：计数在进程内累计，重启清零——这是成本护栏而非安全边界。
+        budget = get_settings().session_token_budget
+        if budget > 0 and session_tokens(req.session_id) >= budget:
+            session = session_store.get_session_by_thread_id(req.session_id)
+            session_store.write_audit(
+                session.id if session is not None else None,
+                "token_budget_exceeded",
+                f"session_total>={budget}",
+            )
+            yield _sse(
+                "error",
+                {
+                    "code": "token_budget_exceeded",
+                    "message": "本会话用量已达上限，请新建会话继续，或联系管理员调整预算",
+                },
+            )
+            return
         checkpointer = get_checkpointer()
         initial = _initial_state(req.message, req.patient_id)
         # 有 checkpointer 时历史由 checkpoint 提供，避免 DB 前置消息重复注入。
