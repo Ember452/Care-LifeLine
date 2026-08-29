@@ -386,4 +386,13 @@ async def chat_stream(
             },
         )
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    # P2-A：禁缓存 + 禁反向代理缓冲，保证 SSE 不被中间层攒批。
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
