@@ -60,11 +60,15 @@ def test_allergy_and_followup_roundtrip(client: TestClient) -> None:
     assert allergy.status_code == 200
     assert allergy.json()["severity"] == "severe"
 
-    bad = client.post("/v1/patients/1/allergies", json={"allergen": "x", "severity": "致命"}, headers=h)
+    bad = client.post(
+        "/v1/patients/1/allergies", json={"allergen": "x", "severity": "致命"}, headers=h
+    )
     assert bad.status_code == 422  # severity 枚举校验
 
     followup = client.post(
-        "/v1/patients/1/followups", json={"plan": "复查 INR", "due_date": "2026-09-15T10:00:00"}, headers=h
+        "/v1/patients/1/followups",
+        json={"plan": "复查 INR", "due_date": "2026-09-15T10:00:00"},
+        headers=h,
     )
     assert followup.status_code == 200
     fid = followup.json()["id"]
