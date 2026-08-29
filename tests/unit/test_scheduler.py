@@ -50,6 +50,20 @@ def test_run_once_caches_reminders(tmp_path, monkeypatch) -> None:
     assert snapshot[1]  # 150 > 140 触发提醒
     assert get_latest_reminders(1) == snapshot[1]
 
+    # P2-F：提醒落库，重启（内存缓存清空）后仍能从库中读回。
+    from care_lifeline.proactive import scheduler as scheduler_mod
+
+    scheduler_mod._LATEST = {}
+    restored = get_latest_reminders(1)
+    assert len(restored) == 1
+    assert restored[0].metric == "收缩压"
+    assert restored[0].severity == "warning"
+
+    # replace 语义：指标回落后新一轮扫描覆盖旧提醒。
+    patient_memory.append_metric(1, "收缩压", 120.0)
+    assert run_once()[1] == []
+    assert get_latest_reminders(1) == []
+
 
 def test_default_lock_path_is_absolute_not_cwd() -> None:
     import care_lifeline.proactive.scheduler as scheduler_mod

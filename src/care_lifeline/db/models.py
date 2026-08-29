@@ -116,6 +116,22 @@ class PatientMetric(Base):
     measured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class ReminderRow(Base):
+    """主动触达提醒落库（P2-F：重启不丢、多实例一致）。
+
+    调度器每轮扫描后以 ``replace`` 语义写入该患者的最新提醒集。
+    """
+
+    __tablename__ = "proactive_reminders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
+    metric: Mapped[str] = mapped_column(String(64))
+    message: Mapped[str] = mapped_column(Text)
+    severity: Mapped[str] = mapped_column(String(16), default="info")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class HitlReview(Base):
     """Clinician review queue item for high-risk / HITL sessions (M4-1)."""
 

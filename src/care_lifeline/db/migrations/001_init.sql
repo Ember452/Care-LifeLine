@@ -89,3 +89,13 @@ CREATE TABLE IF NOT EXISTS hitl_reviews (
     reviewed_at     TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS ix_hitl_reviews_status ON hitl_reviews(status);
+
+CREATE TABLE IF NOT EXISTS proactive_reminders (
+    id            SERIAL PRIMARY KEY,
+    patient_id    INTEGER NOT NULL REFERENCES patients(id),
+    metric        VARCHAR(64) NOT NULL,
+    message       TEXT NOT NULL,
+    severity      VARCHAR(16) NOT NULL DEFAULT 'info',
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_proactive_reminders_patient ON proactive_reminders(patient_id);

@@ -5,7 +5,16 @@ from sqlalchemy import delete, select
 
 from care_lifeline.api.security import hash_password, verify_password
 from care_lifeline.db.engine import get_sessionmaker
-from care_lifeline.db.models import AuditLog, HitlReview, Message, QcHit, QcRuleRow, Session, User
+from care_lifeline.db.models import (
+    AuditLog,
+    HitlReview,
+    Message,
+    QcHit,
+    QcRuleRow,
+    ReminderRow,
+    Session,
+    User,
+)
 
 
 def _to_langchain_message(row: Message):
@@ -111,6 +120,44 @@ def set_qc_rule_enabled(code: str, enabled: bool) -> bool:
         row.enabled = enabled
         session.commit()
         return True
+
+
+def replace_reminders(patient_id: int, items: list[dict]) -> None:
+    """以 replace 语义写入患者最新一轮主动提醒（P2-F）。
+
+    Args:
+        patient_id: 患者主键。
+        items: ``{metric, message, severity}`` 字典列表；空列表清空该患者提醒。
+    """
+    maker = get_sessionmaker()
+    with maker() as session:
+        session.execute(delete(ReminderRow).where(ReminderRow.patient_id == patient_id))
+        for item in items:
+            session.add(
+                ReminderRow(
+                    patient_id=patient_id,
+                    metric=item["metric"],
+                    message=item["message"],
+                    severity=item.get("severity", "info"),
+                )
+            )
+        session.commit()
+
+
+def list_reminders(patient_id: int) -> list[dict]:
+    """返回患者当前落库的主动提醒（按写入顺序）。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        rows = list(
+            session.execute(
+                select(ReminderRow)
+                .where(ReminderRow.patient_id == patient_id)
+                .order_by(ReminderRow.id)
+            ).scalars()
+        )
+    return [
+        {"metric": row.metric, "message": row.message, "severity": row.severity} for row in rows
+    ]
 
 
 def list_sessions(user_id: int | None = None) -> list[Session]:

@@ -63,12 +63,20 @@ _TASK: asyncio.Task | None = None
 
 
 def get_latest_reminders(patient_id: int) -> list[Reminder]:
-    """Return the most recent proactive reminders produced by the scheduler."""
+    """Return the most recent proactive reminders produced by the scheduler.
+
+    P2-F：优先读落库结果（重启/多实例一致）；库中无记录时回落进程内缓存。
+    """
+    from care_lifeline.db import session_store
+
+    stored = session_store.list_reminders(patient_id)
+    if stored:
+        return [Reminder(patient_id=patient_id, **item) for item in stored]
     return _LATEST.get(patient_id, [])
 
 
 def run_once() -> dict[int, list[Reminder]]:
-    """Scan every patient and cache reminders above clinical thresholds."""
+    """Scan every patient and persist reminders above clinical thresholds."""
     global _LATEST
     lock = DistributedLock()
     if not lock.acquire():
@@ -78,6 +86,11 @@ def run_once() -> dict[int, list[Reminder]]:
         for patient_id in patient_memory.list_patient_ids():
             snapshot[patient_id] = evaluate(patient_id)
         _LATEST = snapshot
+        # P2-F：落库 replace，重启与多实例不再依赖进程内存。
+        from care_lifeline.db import session_store
+
+        for patient_id, reminders in snapshot.items():
+            session_store.replace_reminders(patient_id, [r.model_dump() for r in reminders])
         return snapshot
     finally:
         lock.release()
@@ -86,7 +99,8 @@ def run_once() -> dict[int, list[Reminder]]:
 async def _loop(interval: int) -> None:
     while True:
         with contextlib.suppress(Exception):
-            run_once()
+            # P2-F：同步 SQLAlchemy 扫描放线程池，不再阻塞事件循环。
+            await asyncio.to_thread(run_once)
         await asyncio.sleep(interval)
 
 
