@@ -14,7 +14,6 @@
   "dependencies": {
     "@arco-design/web-react": "^2.64.0",
     "@tanstack/react-query": "^5.59.0",
-    "ahooks": "^3.8.0",
     "dayjs": "^1.11.13",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

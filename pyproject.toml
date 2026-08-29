@@ -19,8 +19,6 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
-    "ragas>=0.2",
-    "deepeval>=0.0",
     "python-multipart",
     "pyjwt>=2.9",
 ]
