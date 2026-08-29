@@ -46,10 +46,10 @@ def _initial(text: str) -> AgentState:
     }
 
 
-def _run_graph(text: str) -> dict:
+def _run_graph(text: str, provider=None) -> dict:
     """跑一次图并记录真实端到端延迟（P1-9：不再硬编码 0）。"""
     start = time.perf_counter()
-    state = asyncio.run(build_graph(MockProvider()).ainvoke(_initial(text)))
+    state = asyncio.run(build_graph(provider or MockProvider()).ainvoke(_initial(text)))
     latency_ms = (time.perf_counter() - start) * 1000
     qc = state["qc_result"]
     status = qc.status if qc is not None else "passed"
@@ -100,26 +100,31 @@ def _feedback_expect(case: dict) -> str:
     return "answer"
 
 
-def _run_feedback(case: dict) -> dict:
+def _run_feedback(case: dict, provider=None) -> dict:
     """数据飞轮回归（P2-17）：把审核沉淀的反馈样本重新过一遍图。"""
-    row = _run_graph(case.get("input", ""))
+    row = _run_graph(case.get("input", ""), provider)
     row["category"] = "feedback"
     row["expect"] = _feedback_expect(case)
     return row
 
 
-def run_suite(report_path: str = "eval_report.md") -> dict:
-    """Run the eval datasets through the mock stack and emit a Markdown report.
+def run_suite(report_path: str = "eval_report.md", provider=None) -> dict:
+    """Run the eval datasets through the graph stack and emit a Markdown report.
 
     Datasets (redteam / refusal / report_cases / feedback_cases) live under
     data/eval and are NOT used for RAG retrieval, so they never leak into
     prompt context. Feedback cases are clinician-approved samples appended by
     the workbench flywheel (P2-17).
+
+    Args:
+        report_path: 报告输出路径。
+        provider: LLM 提供者；缺省用 MockProvider（``--mode real`` 可切真实模型）。
     """
+    resolved = provider or MockProvider()
     results: list[dict] = []
     for ds in ("redteam", "refusal"):
         for case in _load(ds):
-            row = _run_graph(case["input"])
+            row = _run_graph(case["input"], resolved)
             row["category"] = ds
             row["expect"] = "refuse"
             results.append(row)
@@ -128,7 +133,7 @@ def run_suite(report_path: str = "eval_report.md") -> dict:
         results.append(_run_report(case["text"]))
 
     for case in _load(_FEEDBACK_DATASET):
-        results.append(_run_feedback(case))
+        results.append(_run_feedback(case, resolved))
 
     metrics = compute_metrics(results)
     report = render_markdown(results, metrics)
@@ -170,7 +175,30 @@ def render_markdown(results: list[dict], metrics: dict) -> str:
 
 
 if __name__ == "__main__":
-    outcome = run_suite()
+    import argparse
+    import sys
+
+    from care_lifeline.config import get_settings
+
+    parser = argparse.ArgumentParser(description="Care-LifeLine 评测套件")
+    parser.add_argument("--mode", choices=["mock", "real"], default="mock", help="评测用 LLM 模式")
+    args = parser.parse_args()
+
+    provider = None
+    if args.mode == "real":
+        settings = get_settings()
+        if settings.llm_mode != "real":
+            print("错误：--mode real 需要 CARE_LLM_MODE=real（意图/质控的 LLM 判定才生效）")
+            sys.exit(2)
+        try:
+            from care_lifeline.llm.real_provider import RealProvider
+
+            provider = RealProvider(settings)
+        except RuntimeError as exc:
+            print(f"错误：{exc}")
+            sys.exit(2)
+
+    outcome = run_suite(provider=provider)
     print(f"评测完成 -> {outcome['report_path']}")
     for key, value in outcome["metrics"].items():
         print(f"  {key}: {value}")
