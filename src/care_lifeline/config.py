@@ -1,8 +1,11 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 开发默认密钥：生产环境（care_env="production"）携带该值必须拒绝启动（P2-B）。
+_INSECURE_DEV_SECRET = "dev-insecure-secret-change-me-please-rotate-in-prod"
 
 
 class Settings(BaseSettings):
@@ -30,7 +33,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./care.db"
     qc_risk_threshold: float = Field(default=0.75, gt=0.0, le=1.0)
     api_port: int = 8000
-    jwt_secret: str = "dev-insecure-secret-change-me-please-rotate-in-prod"
+    # 运行环境：production 下强制校验 jwt_secret 等安全配置。
+    care_env: Literal["dev", "production"] = "dev"
+    jwt_secret: str = _INSECURE_DEV_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     # RAG：默认关闭（零依赖内存库）。配置 qdrant_url 后启用 Qdrant 向量库。
@@ -40,6 +45,12 @@ class Settings(BaseSettings):
     rag_enabled: bool = False
     # 主动触发调度间隔（秒）
     proactive_interval_seconds: int = Field(default=300, gt=10)
+
+    @model_validator(mode="after")
+    def _reject_insecure_secret_in_production(self) -> "Settings":
+        if self.care_env == "production" and self.jwt_secret == _INSECURE_DEV_SECRET:
+            raise ValueError("CARE_JWT_SECRET 仍为开发默认值：生产环境必须通过环境变量注入强密钥")
+        return self
 
 
 @lru_cache
