@@ -14,6 +14,7 @@ from care_lifeline.api.runtime import (
     token_summary,
 )
 from care_lifeline.api.security import ROLE_ADMIN, CurrentUser, require_roles
+from care_lifeline.config import get_settings
 from care_lifeline.db import session_store
 from care_lifeline.db.engine import get_sessionmaker
 from care_lifeline.db.models import AuditLog, HitlReview, Message, QcHit, Session
@@ -76,6 +77,21 @@ def _real_source_fraction(citations: list[dict]) -> float:
     return round(grounded / len(citations), 4)
 
 
+def _token_summary_with_cost() -> dict[str, object]:
+    """token 汇总 + 按配置单价折算的估算成本（单价 0 时不含 cost 字段）。"""
+    summary = token_summary()
+    settings = get_settings()
+    if settings.token_price_input_per_1k or settings.token_price_output_per_1k:
+        input_tokens = float(summary.get("total_input_tokens", 0.0))  # type: ignore[arg-type]
+        output_tokens = float(summary.get("total_output_tokens", 0.0))  # type: ignore[arg-type]
+        cost = (
+            input_tokens / 1000 * settings.token_price_input_per_1k
+            + output_tokens / 1000 * settings.token_price_output_per_1k
+        )
+        summary["estimated_cost"] = round(cost, 4)
+    return summary
+
+
 def _metrics() -> Metrics:
     maker = get_sessionmaker()
     with maker() as db:
@@ -119,7 +135,7 @@ def _metrics() -> Metrics:
         refuse_rate=refusal_rate,
         node_latency=node_latency_summary(),
         qc_status_counts=qc_status_counts(),
-        token_usage=token_summary(),
+        token_usage=_token_summary_with_cost(),
     )
 
 

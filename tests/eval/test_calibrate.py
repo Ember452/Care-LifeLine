@@ -88,3 +88,32 @@ def test_threshold_grid_covers_range() -> None:
     assert THRESHOLDS[0] == 0.05
     assert THRESHOLDS[-1] == 0.95
     assert len(THRESHOLDS) == 19
+
+
+def test_derive_from_feedback_approve_and_edit() -> None:
+    from care_lifeline.eval.calibrate import _derive_from_feedback
+
+    rows = [
+        {"decision": "approve", "draft": "医生认可的草稿"},
+        {"decision": "edit", "draft": "有问题的草稿", "corrected": "医生修正稿"},
+        {"decision": "edit", "draft": "无修正文本，无法标注"},
+        {"decision": "reject", "draft": "被驳回的草稿"},
+    ]
+    derived = _derive_from_feedback(rows)
+    # 只有 approve 草稿与 edit 修正稿能可靠标注为 pass
+    assert derived == [
+        {"draft": "医生认可的草稿", "label": "pass", "source": "feedback"},
+        {"draft": "医生修正稿", "label": "pass", "source": "feedback"},
+    ]
+
+
+def test_load_labeled_cases_with_feedback_dedupes() -> None:
+    from care_lifeline.eval.calibrate import load_labeled_cases
+
+    base = load_labeled_cases(include_feedback=False)
+    expanded = load_labeled_cases(include_feedback=True)
+    assert len(expanded) >= len(base)
+    drafts = [str(c["draft"]) for c in expanded]
+    assert len(drafts) == len(set(drafts))  # 按草稿去重
+    labels = {c["label"] for c in expanded}
+    assert labels <= {"pass", "block"}

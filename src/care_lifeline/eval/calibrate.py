@@ -79,17 +79,53 @@ def best_threshold(rows: list[ThresholdRow]) -> float | None:
     return best.threshold
 
 
-def run_calibration(provider: LLMProvider, report_path: str = CALIBRATION_REPORT) -> dict:
+def _derive_from_feedback(rows: list[dict]) -> list[dict]:
+    """从医生反馈集派生校准标注（数据飞轮 → 阈值校准的闭环）。
+
+    - approve：草稿经医生认可 → ``pass``；
+    - edit 且带修正文本：修正稿是医生认可的版本 → ``pass``（原始草稿的
+      问题多为 citation/disclaimer 级提醒，标 block 会污染正类，不采用）；
+    - 其余（reject / 无修正文本的 edit）：无法可靠给出草稿级标注，跳过。
+    """
+    out: list[dict] = []
+    for row in rows:
+        decision = row.get("decision")
+        if decision == "approve" and row.get("draft"):
+            out.append({"draft": str(row["draft"]), "label": "pass", "source": "feedback"})
+        elif decision == "edit" and row.get("corrected"):
+            out.append({"draft": str(row["corrected"]), "label": "pass", "source": "feedback"})
+    return out
+
+
+def load_labeled_cases(include_feedback: bool = False) -> list[dict]:
+    """加载校准标注集；``include_feedback`` 时并入反馈集派生样本并按草稿去重。"""
+    cases = list(_load("qc_calibration"))
+    if not include_feedback:
+        return cases
+    seen = {str(case.get("draft")) for case in cases}
+    for derived in _derive_from_feedback(_load("feedback_cases")):
+        if derived["draft"] not in seen:
+            seen.add(derived["draft"])
+            cases.append(derived)
+    return cases
+
+
+def run_calibration(
+    provider: LLMProvider,
+    report_path: str = CALIBRATION_REPORT,
+    include_feedback: bool = False,
+) -> dict:
     """跑完整校准流程并输出 Markdown 报告。
 
     Args:
         provider: real 模式的 LLM 提供者（mock 评审员打分无语义意义）。
         report_path: 校准报告输出路径。
+        include_feedback: 并入反馈集派生的标注（数据飞轮闭环）。
 
     Returns:
         含 scores / rows / best_threshold / report 的结果字典。
     """
-    cases = _load("qc_calibration")
+    cases = load_labeled_cases(include_feedback=include_feedback)
     scores = collect_scores(cases, provider)
     rows = sweep(scores)
     best = best_threshold(rows)
@@ -133,6 +169,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="QC 阈值校准（需 real 模式）")
     parser.add_argument("--mode", choices=["mock", "real"], default="real")
+    parser.add_argument(
+        "--include-feedback",
+        action="store_true",
+        help="并入反馈集派生标注（approve→pass；edit 取医生修正稿）",
+    )
     args = parser.parse_args()
 
     if args.mode != "real":
@@ -150,7 +191,7 @@ if __name__ == "__main__":
         print(f"错误：{exc}")
         sys.exit(2)
 
-    outcome = run_calibration(provider)
+    outcome = run_calibration(provider, include_feedback=args.include_feedback)
     print(f"校准完成 -> {CALIBRATION_REPORT}")
     print(f"  推荐阈值: {outcome['best_threshold']}")
     print(f"  标注用例: {len(outcome['scores'])}")

@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     session_token_budget: int = Field(default=0, ge=0)
     # OCR 引擎：stub（零依赖占位）| rapidocr（需安装 ocr 可选依赖组）
     ocr_engine: Literal["stub", "rapidocr"] = "stub"
+    # token 单价（每 1k tokens，货币单位由部署方定义）；默认 0 = 不估算成本
+    token_price_input_per_1k: float = Field(default=0.0, ge=0)
+    token_price_output_per_1k: float = Field(default=0.0, ge=0)
 
     @model_validator(mode="after")
     def _reject_insecure_secret_in_production(self) -> "Settings":

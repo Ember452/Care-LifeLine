@@ -88,3 +88,11 @@ def test_token_usage_is_frozen() -> None:
     usage = TokenUsage(input_tokens=1, output_tokens=2)
     with pytest.raises(FrozenInstanceError):
         usage.input_tokens = 5  # type: ignore[misc]
+
+
+def test_session_tokens_reader() -> None:
+    from care_lifeline.api.runtime import session_tokens
+
+    assert session_tokens("none") == 0
+    record_token_usage("s1", TokenUsage(input_tokens=30, output_tokens=12))
+    assert session_tokens("s1") == 42

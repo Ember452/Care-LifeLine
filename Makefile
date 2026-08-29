@@ -1,7 +1,7 @@
 # 统一命令入口：本地与 CI 使用同一套命令（Makefile 与 .github/workflows 保持同步）
 PYTHON ?= uv run
 
-.PHONY: install dev test eval eval-real calibrate lint type check web-install web-test web-build web-check compose-up compose-down clean
+.PHONY: install dev test eval eval-real calibrate eval-retrieval lint type check web-install web-test web-build web-check compose-up compose-down clean
 
 install:          ## 安装依赖（uv sync）
 	uv sync
@@ -20,6 +20,12 @@ eval-real:        ## 评测运行（real 模式，输出 eval_report_real.md；�
 
 calibrate:        ## QC 阈值校准（real 模式：标注集 + PR 曲线选点，输出 eval_calibration.md）
 	$(PYTHON) python -m care_lifeline.eval.calibrate --mode real
+
+calibrate-expand: ## 校准校准集并入反馈集派生标注（数据飞轮闭环，real 模式）
+	$(PYTHON) python -m care_lifeline.eval.calibrate --mode real --include-feedback
+
+eval-retrieval:   ## 指南检索质量评测（hit@k / MRR，输出 eval_retrieval.md）
+	$(PYTHON) python -m care_lifeline.eval.retrieval
 
 lint:             ## Lint 检查
 	$(PYTHON) ruff check src tests

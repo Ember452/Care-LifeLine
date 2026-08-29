@@ -1,0 +1,18 @@
+[
+  {"query": "血压多高算高血压？诊断标准是多少", "expect_source": "hypertension.md"},
+  {"query": "降压目标是多少？一般患者和控制到多少", "expect_source": "hypertension.md"},
+  {"query": "空腹血糖 7.0 能诊断糖尿病吗？糖化血红蛋白标准", "expect_source": "diabetes.md"},
+  {"query": "糖尿病血糖控制目标空腹和餐后分别是多少", "expect_source": "diabetes.md"},
+  {"query": "低密度脂蛋白胆固醇控制目标极高危是多少", "expect_source": "hyperlipidemia.md"},
+  {"query": "他汀类药物肌肉疼痛副作用要紧吗", "expect_source": "hyperlipidemia.md"},
+  {"query": "房颤抗凝治疗怎么选？华法林 INR 目标", "expect_source": "atrial_fibrillation.md"},
+  {"query": "房颤患者吃抗凝药期间牙龈出血怎么办", "expect_source": "atrial_fibrillation.md"},
+  {"query": "心衰患者每天体重增加多少要警惕", "expect_source": "heart_failure.md"},
+  {"query": "慢阻肺诊断标准肺功能 FEV1", "expect_source": "copd.md"},
+  {"query": "哮喘急性发作怎么处理？什么情况要打急救电话", "expect_source": "asthma.md"},
+  {"query": "突发口角歪斜一侧肢体无力是什么病", "expect_source": "ischemic_stroke.md"},
+  {"query": "溶栓时间窗是几个小时", "expect_source": "ischemic_stroke.md"},
+  {"query": "华法林和阿司匹林一起吃会怎样", "expect_source": "drug_interaction_safety.md"},
+  {"query": "体检报告转氨酶轻度升高说明什么", "expect_source": "lab_interpretation.md"},
+  {"query": "肿瘤标志物升高一定是癌症吗", "expect_source": "lab_interpretation.md"}
+]
