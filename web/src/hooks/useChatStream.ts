@@ -8,6 +8,7 @@ import type {
   RiskLevel,
   ScopeVerdict,
   SSEQC,
+  SSETokenUsage,
 } from '@/types/contract'
 
 export type AgentStepKind = 'step' | 'tool' | 'memory'
@@ -30,6 +31,8 @@ export interface ChatMessage {
   hitl?: string
   /** scope_verdict：非 in_scope 时展示拒答原因 */
   scopeVerdict?: ScopeVerdict
+  /** done 事件附带的 token 用量（mock 模式为估算值） */
+  tokenUsage?: SSETokenUsage
   /** Agent 执行过程（agent_step / tool_call / memory） */
   steps: AgentStepItem[]
   streaming?: boolean
@@ -174,7 +177,11 @@ export function useChatStream(sessionId: string, options: UseChatStreamOptions =
           } else if (d.final && !collected.length) {
             patch(assistantId, (m) => (m.content ? m : { ...m, content: d.final }))
           }
-          patch(assistantId, (m) => ({ ...m, streaming: false }))
+          patch(assistantId, (m) => ({
+            ...m,
+            streaming: false,
+            tokenUsage: d.token_usage ?? undefined,
+          }))
         },
         onError: (e) => {
           patch(assistantId, (m) => ({

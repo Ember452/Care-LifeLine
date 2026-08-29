@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, Input, Popconfirm, Tag } from '@arco-design/web-react'
-import { IconDelete, IconPlus, IconStop } from '@arco-design/web-react/icon'
+import { Button, Input, Popconfirm, Tag, Typography } from '@arco-design/web-react'
+import { IconDelete, IconPlus, IconSend, IconStop } from '@arco-design/web-react/icon'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { sessionApi, sessionKey } from '@/services/api'
 import { useChatStream } from '@/hooks/useChatStream'
@@ -77,11 +77,12 @@ export default function ChatPage() {
     },
   })
 
-  // 新消息自动滚到底
+  // 新消息与流式 token 都自动滚到底
+  const lastContent = messages[messages.length - 1]?.content
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages.length])
+  }, [messages.length, lastContent])
 
   const submit = (text: string) => {
     const value = text.trim()
@@ -102,8 +103,9 @@ export default function ChatPage() {
     <div style={{ display: 'flex', height: '100%' }}>
       {/* 左侧会话列表 */}
       <div
+        className="care-session-list"
         style={{
-          width: 240,
+          width: 248,
           flexShrink: 0,
           borderRight: '1px solid var(--border)',
           background: 'var(--bg-card)',
@@ -113,11 +115,11 @@ export default function ChatPage() {
         }}
       >
         <div style={{ padding: 12 }}>
-          <Button long type="primary" disabled={createMutation.isPending} onClick={() => createMutation.mutate()}>
+          <Button long type="primary" shape="round" disabled={createMutation.isPending} onClick={() => createMutation.mutate()}>
             <IconPlus /> 新建会话
           </Button>
         </div>
-        <div className="care-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <div className="care-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 8px 12px' }}>
           <AsyncState
             loading={sessionsQuery.isLoading}
             error={sessionsQuery.error}
@@ -132,14 +134,17 @@ export default function ChatPage() {
                 <div
                   key={sid}
                   onClick={() => setActiveSessionId(sid)}
+                  className="care-session-item"
                   style={{
-                    padding: '10px 12px 10px 16px',
+                    padding: '9px 10px 9px 12px',
+                    marginBottom: 2,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: 8,
-                    background: active ? 'var(--brand-100)' : 'transparent',
+                    borderRadius: 'var(--radius-md)',
+                    background: active ? 'var(--brand-50)' : 'transparent',
                     borderLeft: active ? '3px solid var(--brand-500)' : '3px solid transparent',
                   }}
                 >
@@ -147,7 +152,7 @@ export default function ChatPage() {
                     <div
                       style={{
                         fontSize: 14,
-                        color: active ? 'var(--brand-500)' : 'var(--text-1)',
+                        color: active ? 'var(--brand-600)' : 'var(--text-1)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -197,13 +202,18 @@ export default function ChatPage() {
             background: 'var(--bg-card)',
           }}
         >
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>
+          <Typography.Text bold style={{ fontSize: 15 }}>
             {activeSession?.title || '智能问诊'}
-          </span>
-          {intent && <Tag color="arcoblue" size="small">{intentLabel(intent)}</Tag>}
+          </Typography.Text>
+          {intent && (
+            <Tag color="arcoblue" size="small" style={{ borderRadius: 999 }}>
+              {intentLabel(intent)}
+            </Tag>
+          )}
           {riskLevel && (
             <Tag
               size="small"
+              style={{ borderRadius: 999 }}
               color={riskLevel === 'critical' ? 'red' : riskLevel === 'urgent' ? 'orange' : 'green'}
             >
               {RISK_LABEL[riskLevel]}
@@ -211,47 +221,67 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div ref={scrollRef} className="care-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 24px' }}>
-          {showSkeleton ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 24 }}>
-              <div className="care-skeleton-bar" style={{ height: 52 }} />
-              <div className="care-skeleton-bar" style={{ height: 52 }} />
-            </div>
-          ) : messages.length === 0 ? (
-            <EmptyState onExample={() => submit('最近化验单提示贫血，需要注意什么？')} />
-          ) : (
-            messages.map((m) => <StreamMessage key={m.id} message={m} />)
-          )}
+        <div ref={scrollRef} className="care-scroll" style={{ flex: 1, overflowY: 'auto', padding: '8px 28px' }}>
+          <div style={{ maxWidth: 760, margin: '0 auto' }}>
+            {showSkeleton ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 24 }}>
+                <div className="care-skeleton-bar" style={{ height: 52 }} />
+                <div className="care-skeleton-bar" style={{ height: 52 }} />
+              </div>
+            ) : messages.length === 0 ? (
+              <EmptyState onExample={(text) => submit(text)} />
+            ) : (
+              messages.map((m) => <StreamMessage key={m.id} message={m} />)
+            )}
+          </div>
         </div>
 
-        <div
-          style={{
-            borderTop: '1px solid var(--border)',
-            padding: 16,
-            display: 'flex',
-            gap: 8,
-            alignItems: 'flex-end',
-            background: 'var(--bg-card)',
-          }}
-        >
-          <Input.TextArea
-            value={input}
-            onChange={setInput}
-            disabled={!chatReady || loading}
-            placeholder={chatReady ? '描述您的症状，回车发送…' : '会话创建中，请稍候…'}
-            autoSize={{ minRows: 1, maxRows: 4 }}
-            onPressEnter={() => submit(input)}
-            style={{ flex: 1 }}
-          />
-          {loading ? (
-            <Button type="primary" status="warning" icon={<IconStop />} onClick={stop}>
-              停止
-            </Button>
-          ) : (
-            <Button type="primary" disabled={!chatReady || !input.trim()} onClick={() => submit(input)}>
-              发送
-            </Button>
-          )}
+        {/* 输入区：圆角容器 + 发送/停止 */}
+        <div style={{ borderTop: '1px solid var(--border)', padding: '12px 28px 16px', background: 'var(--bg-card)' }}>
+          <div
+            style={{
+              maxWidth: 760,
+              margin: '0 auto',
+              display: 'flex',
+              gap: 8,
+              alignItems: 'flex-end',
+              background: 'var(--bg-page)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 10,
+            }}
+          >
+            <Input.TextArea
+              value={input}
+              onChange={setInput}
+              disabled={!chatReady || loading}
+              placeholder={chatReady ? '描述您的症状，Enter 发送 · Shift+Enter 换行' : '会话创建中，请稍候…'}
+              autoSize={{ minRows: 1, maxRows: 4 }}
+              onPressEnter={(e) => {
+                if (!e.shiftKey) {
+                  e.preventDefault()
+                  submit(input)
+                }
+              }}
+              style={{ flex: 1, background: 'transparent' }}
+            />
+            {loading ? (
+              <Button type="primary" status="warning" icon={<IconStop />} onClick={stop}>
+                停止
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                shape="circle"
+                disabled={!chatReady || !input.trim()}
+                onClick={() => submit(input)}
+                icon={<IconSend />}
+              />
+            )}
+          </div>
+          <div style={{ maxWidth: 760, margin: '6px auto 0', fontSize: 12, color: 'var(--text-3)' }}>
+            AI 建议仅供参考，不替代执业医师诊断；急症请立即拨打 120。
+          </div>
         </div>
       </div>
     </div>

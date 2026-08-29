@@ -18,19 +18,35 @@ function Logo() {
   return (
     <div
       style={{
-        height: 52,
+        height: 56,
         display: 'flex',
         alignItems: 'center',
+        gap: 10,
         padding: '0 20px',
-        fontWeight: 700,
-        fontSize: 16,
-        letterSpacing: 0.2,
-        color: 'var(--brand-500)',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
       }}
     >
-      Care-LifeLine
+      <span
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 8,
+          background: 'var(--brand-500)',
+          color: '#fff',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 15,
+          fontWeight: 700,
+          flexShrink: 0,
+        }}
+      >
+        ⚕
+      </span>
+      <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: 0.2, color: 'var(--text-1)' }}>
+        Care-LifeLine
+      </span>
     </div>
   )
 }

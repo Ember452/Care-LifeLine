@@ -12,7 +12,7 @@ export type Role = 'admin' | 'clinician' | 'patient'
 
 export type RiskLevel = 'routine' | 'urgent' | 'critical'
 
-export type QCStatus = 'passed' | 'hitl' | 'refused'
+export type QCStatus = 'passed' | 'warning' | 'hitl' | 'refused'
 
 export type ScopeVerdict = 'in_scope' | 'out_of_scope' | 'restricted' | 'unsafe'
 
@@ -214,9 +214,18 @@ export interface SSEQC {
   violations: QCViolation[]
 }
 
+export interface SSETokenUsage {
+  input: number
+  output: number
+  total: number
+  /** true = mock 模式字符估算值，非真实计量 */
+  estimated?: boolean
+}
+
 export interface SSEDone {
   final: string
   citations: Citation[]
+  token_usage?: SSETokenUsage | null
 }
 
 export interface SSEError {

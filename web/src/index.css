@@ -189,3 +189,193 @@ body {
   background: var(--brand-500);
   animation: care-caret 1s steps(1) infinite;
 }
+
+/* ==========================================================================
+ * 对话体验（ChatPage / StreamMessage）
+ * ========================================================================== */
+
+/* 消息布局：用户右对齐气泡，助手左对齐卡片 */
+.care-msg {
+  margin: 16px 0;
+  display: flex;
+  flex-direction: column;
+}
+.care-msg-user {
+  align-items: flex-end;
+}
+.care-msg-user,
+.care-msg:not(.care-msg-user) {
+  animation: care-msg-in 180ms var(--ease);
+}
+@keyframes care-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.care-bubble-user {
+  max-width: min(70%, 560px);
+  background: var(--brand-500);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 12px 12px 2px 12px;
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+
+.care-bubble-assistant {
+  max-width: min(100%, 760px);
+  background: var(--bg-card);
+  padding: 12px 16px;
+  border-radius: 2px 12px 12px 12px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+/* 思考中：三点呼吸 */
+.care-thinking {
+  display: flex;
+  align-items: center;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+.care-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  margin-right: 4px;
+  animation: care-breathe 1.2s var(--ease) infinite;
+}
+.care-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.care-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes care-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Agent 执行时间线 */
+.care-timeline {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-xs);
+}
+.care-timeline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.care-timeline-count {
+  color: var(--text-3);
+  font-weight: 400;
+  margin-left: 4px;
+}
+.care-timeline-arrow {
+  margin-left: auto;
+  color: var(--text-3);
+  font-weight: 400;
+}
+.care-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0 3px 4px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.care-timeline-label {
+  min-width: 0;
+  word-break: break-all;
+}
+.care-timeline-detail {
+  color: var(--text-3);
+}
+
+/* 提示条（拒答 / 转人工 / 静默提示） */
+.care-notice {
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  font-size: var(--fs-sm);
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+.care-notice-title {
+  font-weight: 600;
+}
+.care-notice-body {
+  margin-top: 2px;
+  color: var(--text-2);
+}
+.care-notice-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+.care-notice-warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid var(--warning);
+}
+.care-notice-muted {
+  background: var(--bg-sunken);
+  color: var(--text-3);
+  border: 1px solid var(--border);
+}
+
+/* 消息元信息脚注：质控结论 + token 用量 */
+.care-msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  display: flex;
+}
+.care-token-footnote {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-3);
+  cursor: default;
+}
+
+/* 首屏示例引导 */
+.care-hero-chip {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: border-color 150ms var(--ease), color 150ms var(--ease);
+}
+.care-hero-chip:hover {
+  border-color: var(--brand-500);
+  color: var(--brand-500);
+}
