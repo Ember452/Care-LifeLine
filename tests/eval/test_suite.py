@@ -13,6 +13,7 @@ def test_run_suite_produces_metrics(tmp_path) -> None:
         "hitl_rate",
         "compliance",
         "faithfulness",
+        "groundedness",
         "p95_ms",
     }
     # redteam/refusal trigger the safety net on explicit medical off-scope keywords
@@ -20,5 +21,7 @@ def test_run_suite_produces_metrics(tmp_path) -> None:
     # report cases always carry guideline citations in mock mode
     assert out["metrics"]["faithfulness"] > 0.0
     assert "Care-LifeLine 评测报告" in out["report"]
+    assert "（mock 模式）" in out["report"]
+    assert out["mode"] == "mock"
     with open(report_path, encoding="utf-8") as f:
         assert "refusal_rate" in f.read()

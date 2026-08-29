@@ -7,13 +7,17 @@ import time
 
 from langchain_core.messages import HumanMessage
 
+from care_lifeline.eval.judge import LLMGroundednessJudge, MockGroundednessJudge
 from care_lifeline.eval.metrics import compute_metrics
 from care_lifeline.graph.builder import build_graph
+from care_lifeline.graph.nodes.report_interpreter import _summarize
 from care_lifeline.graph.state import AgentState
 from care_lifeline.llm.mock_provider import MockProvider
 from care_lifeline.tools.rag.registry import build_report_retriever
 from care_lifeline.tools.report_interpreter import (
+    LLMReportInterpreter,
     MockReportInterpreter,
+    ReportInterpreter,
     citation_has_real_source,
 )
 
@@ -61,15 +65,27 @@ def _run_graph(text: str, provider=None) -> dict:
         # 忠实引用口径收紧：必须含真实 source，而不是「出现了 [ / 参考 / 引用」。
         "has_citation": any(citation_has_real_source(c) for c in state.get("citations", [])),
         "latency_ms": round(latency_ms, 2),
+        # 有据率裁判的输入（run_suite 统一评测后写入 grounded）。
+        "draft": draft,
+        "citations": list(state.get("citations", [])),
     }
 
 
-def _run_report(text: str) -> dict:
-    """报告解读用例：优先用真实指南语料检索，保证引用含真实 source。"""
+def _run_report(text: str, provider=None) -> dict:
+    """报告解读用例：优先用真实指南语料检索，保证引用含真实 source。
+
+    real 模式改用 LLMReportInterpreter（与图内节点一致），避免「真实基线
+    里混着 mock 解释器」的口径失真。
+    """
     start = time.perf_counter()
-    interpreter = MockReportInterpreter()
+    from care_lifeline.config import get_settings
+
+    mode = get_settings().llm_mode
+    interpreter: ReportInterpreter = (
+        LLMReportInterpreter(provider) if mode == "real" and provider else MockReportInterpreter()
+    )
     bundle = build_report_retriever()
-    parsed = (
+    result = (
         interpreter.interpret(text, bundle[0], bundle[1]) if bundle else interpreter.interpret(text)
     )
     latency_ms = (time.perf_counter() - start) * 1000
@@ -79,8 +95,10 @@ def _run_report(text: str) -> dict:
         "blocked": False,
         "hitl": False,
         "has_disclaimer": False,
-        "has_citation": any(citation_has_real_source(c) for c in parsed.citations),
+        "has_citation": any(citation_has_real_source(c) for c in result.citations),
         "latency_ms": round(latency_ms, 2),
+        "draft": _summarize(result),
+        "citations": list(result.citations),
     }
 
 
@@ -108,6 +126,16 @@ def _run_feedback(case: dict, provider=None) -> dict:
     return row
 
 
+def _apply_groundedness(
+    results: list[dict], judge: MockGroundednessJudge | LLMGroundednessJudge
+) -> None:
+    """对已回答且携带引用的用例做有据率裁判；被拦截/无引用的用例不评测。"""
+    for row in results:
+        if row["blocked"] or not row.get("citations"):
+            continue
+        row["grounded"] = judge.judge(row.get("draft", ""), row.get("citations", []))
+
+
 def run_suite(report_path: str = "eval_report.md", provider=None) -> dict:
     """Run the eval datasets through the graph stack and emit a Markdown report.
 
@@ -117,10 +145,14 @@ def run_suite(report_path: str = "eval_report.md", provider=None) -> dict:
     the workbench flywheel (P2-17).
 
     Args:
-        report_path: 报告输出路径。
+        report_path: 报告输出路径（mock/real 各自落盘，不互相覆盖基线）。
         provider: LLM 提供者；缺省用 MockProvider（``--mode real`` 可切真实模型）。
     """
     resolved = provider or MockProvider()
+    is_mock = isinstance(resolved, MockProvider)
+    mode = "mock" if is_mock else "real"
+    # 有据率裁判双实现：mock 用确定性代理保证 CI 回归，real 用 LLM 语义核对。
+    judge = MockGroundednessJudge() if is_mock else LLMGroundednessJudge(resolved)
     results: list[dict] = []
     for ds in ("redteam", "refusal"):
         for case in _load(ds):
@@ -130,25 +162,35 @@ def run_suite(report_path: str = "eval_report.md", provider=None) -> dict:
             results.append(row)
 
     for case in _load("report_cases"):
-        results.append(_run_report(case["text"]))
+        results.append(_run_report(case["text"], resolved))
 
     for case in _load(_FEEDBACK_DATASET):
         results.append(_run_feedback(case, resolved))
 
+    _apply_groundedness(results, judge)
     metrics = compute_metrics(results)
-    report = render_markdown(results, metrics)
+    report = render_markdown(results, metrics, mode=mode)
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report)
-    return {"results": results, "metrics": metrics, "report": report, "report_path": report_path}
+    return {
+        "results": results,
+        "metrics": metrics,
+        "report": report,
+        "report_path": report_path,
+        "mode": mode,
+    }
 
 
-def render_markdown(results: list[dict], metrics: dict) -> str:
+def render_markdown(results: list[dict], metrics: dict, mode: str = "mock") -> str:
     blocked = sum(1 for r in results if r["blocked"])
+    judged = sum(1 for r in results if r.get("grounded") is not None)
     lines = [
-        "# Care-LifeLine 评测报告",
+        f"# Care-LifeLine 评测报告（{mode} 模式）",
         "",
         f"- 用例总数：{len(results)}",
         f"- 被拒答/转人工：{blocked}",
+        f"- 有据率评测用例数：{judged}"
+        + ("（LLM 裁判逐断言核对）" if mode == "real" else "（mock 代理口径：真实引用存在性）"),
         "",
         "## 指标（设计文档 §9.1）",
         "",
@@ -159,6 +201,7 @@ def render_markdown(results: list[dict], metrics: dict) -> str:
         f"| 转人工率 hitl_rate | {metrics['hitl_rate']} |",
         f"| 合规率 compliance | {metrics['compliance']} |",
         f"| 忠实率 faithfulness | {metrics['faithfulness']} |",
+        f"| 有据率 groundedness | {metrics['groundedness']} |",
         f"| 延迟 P95(ms) | {metrics['p95_ms']} |",
         "",
         "## 明细",
@@ -198,7 +241,9 @@ if __name__ == "__main__":
             print(f"错误：{exc}")
             sys.exit(2)
 
-    outcome = run_suite(provider=provider)
-    print(f"评测完成 -> {outcome['report_path']}")
+    # mock/real 基线分文件落盘，互相不覆盖：eval_report.md / eval_report_real.md。
+    report_path = "eval_report_real.md" if args.mode == "real" else "eval_report.md"
+    outcome = run_suite(report_path=report_path, provider=provider)
+    print(f"评测完成（{args.mode}） -> {outcome['report_path']}")
     for key, value in outcome["metrics"].items():
         print(f"  {key}: {value}")

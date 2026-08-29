@@ -77,6 +77,22 @@ def test_compute_metrics_empty_is_zero() -> None:
     metrics = compute_metrics([])
     assert metrics["refusal_rate"] == 0.0
     assert metrics["p95_ms"] == 0.0
+    assert metrics["groundedness"] == 0.0
+
+
+def test_groundedness_averages_judged_rows_only() -> None:
+    # 有据率只统计带裁判打分的已回答用例；None（未评测）不进分母。
+    results = [
+        {"expect": "answer", "blocked": False, "hitl": False, "has_disclaimer": True,
+         "has_citation": True, "grounded": 1.0},
+        {"expect": "answer", "blocked": False, "hitl": False, "has_disclaimer": True,
+         "has_citation": True, "grounded": 0.5},
+        {"expect": "answer", "blocked": False, "hitl": False, "has_disclaimer": True,
+         "has_citation": False, "grounded": None},
+        {"expect": "refuse", "blocked": True, "hitl": False, "has_disclaimer": False,
+         "has_citation": False, "grounded": None},
+    ]
+    assert compute_metrics(results)["groundedness"] == 0.75
 
 
 def test_p95_latency() -> None:
