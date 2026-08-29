@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     # 单会话 token 预算护栏（§10.4）：累计超过即拒绝新请求；0 = 不限额。
     session_token_budget: int = Field(default=0, ge=0)
+    # OCR 引擎：stub（零依赖占位）| rapidocr（需安装 ocr 可选依赖组）
+    ocr_engine: Literal["stub", "rapidocr"] = "stub"
 
     @model_validator(mode="after")
     def _reject_insecure_secret_in_production(self) -> "Settings":
