@@ -37,7 +37,6 @@ src/care_lifeline/
   proactive/  # 主动触发（事件/定时 + 分布式锁）
   safety/     # 质控规则引擎 + PHI 脱敏
   eval/       # 评测套件 / 数据集 / 指标
-  audit/      # 审计日志
   config.py   # pydantic-settings
 tests/
   unit/       # 单测（qc_rules 覆盖率 100% 门禁）
@@ -133,7 +132,7 @@ tests/
 ### 耦合度
 
 - 模块间**只通过稳定接口交互**（`Tool` 协议、统一 `AgentState`、公共类型）；禁止隐式全局状态、禁止跨层直接 import 内部实现。
-- **依赖方向（单向）**：`api → graph → 能力层(tools / memory)`；`safety` / `audit` 为横切底座，被上层调用。禁止反向依赖。
+- **依赖方向（单向）**：`api → graph → 能力层(tools / memory)`；`safety` 为横切底座，被上层调用。审计无独立包，统一入口 `db/session_store.py:write_audit()`（事件类型见各调用点），禁止绕过它直写 `audit_logs`。禁止反向依赖。
 - 新代码默认小、内聚、可单测。
 
 ### 代码文件拆分标准（达到任一即拆，**与文件长度无关**）
@@ -171,7 +170,7 @@ tests/
 
 **重复与依赖**
 - 禁止复制粘贴式重复（DRY）：第三次出现同类代码时必须抽公共函数。
-- 禁止重复造轮子：项目已有能力（`tools/base.py`、`safety/phi.py`、`audit/logger.py`）一律复用。
+- 禁止重复造轮子：项目已有能力（`tools/base.py`、`tools/registry.py`、`safety/phi.py`、`safety/keywords.py`）一律复用。
 - 魔法数字/字符串提取为命名常量或配置（如规则阈值进 `config.py`）。
 
 **性能与资源**
