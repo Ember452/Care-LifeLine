@@ -48,6 +48,36 @@ def test_metrics_structure(client: TestClient) -> None:
     assert data["compliance"] == 1.0
 
 
+def test_metrics_exposes_runtime_observability(client: TestClient) -> None:
+    """聊天后 /admin/metrics 应带出节点延迟、质控计数与 token 用量。"""
+    from care_lifeline.api.runtime import reset_runtime_metrics
+
+    reset_runtime_metrics()
+    token = _token(client)
+    client.post(
+        "/v1/chat/stream",
+        json={"session_id": "s-obs", "message": "最近有点头晕"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    resp = client.get("/v1/admin/metrics", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()
+    # 节点延迟：本次请求经过的节点都有采样
+    assert "triage" in data["node_latency"]
+    assert data["node_latency"]["triage"]["count"] >= 1
+    assert "p95_ms" in data["node_latency"]["triage"]
+    # 质控计数：一次通过
+    assert data["qc_status_counts"].get("passed", 0) >= 1
+    # token 用量：mock 为估算值，但计数与字段齐全
+    tokens = data["token_usage"]
+    assert tokens["request_count"] >= 1
+    assert tokens["total_input_tokens"] > 0
+    assert tokens["estimated_request_count"] == tokens["request_count"]  # mock 全为估算
+    session_row = tokens["sessions"].get("s-obs")
+    assert session_row is not None
+    assert session_row["output_tokens"] > 0
+
+
 def test_audit_trace_returns_messages(client: TestClient) -> None:
     token = _token(client)
     s = session_store.get_or_create_session("sess-a", user_id=1, title="t")

@@ -1,4 +1,7 @@
-from collections.abc import Hashable
+import inspect
+import time
+from collections.abc import Callable, Hashable
+from functools import partial
 
 from langgraph.graph import END, START, StateGraph
 
@@ -23,6 +26,41 @@ _RECURSION_LIMIT = 30
 _QC_UPSTREAM_NODES = ("triage", "report_interpreter", "medication", "hitl", "refuse")
 # 质控出口：warning 且未达重写上限时回边 rewrite，否则收口到 responder。
 _QC_ROUTES: dict[Hashable, str] = {"rewrite": "rewrite", "responder": "responder"}
+
+
+# 节点耗时在状态增量里的键名（SSE/指标层消费；随状态存续，体积仅一个浮点数）。
+_TIMING_KEY = "perf_node_ms"
+
+
+def _timed(name: str, fn: Callable) -> Callable:
+    """给节点包一层耗时统计：把毫秒耗时写进状态增量的 ``_TIMING_KEY``。"""
+    is_async = inspect.iscoroutinefunction(fn)
+    wrapper = _timed_async(fn) if is_async else _timed_sync(fn)
+    wrapper.__name__ = f"timed_{name}"
+    return wrapper
+
+
+def _timed_sync(fn: Callable) -> Callable:
+    def timed_node(state: AgentState) -> dict:
+        start = time.perf_counter()
+        return _with_timing(fn(state), start)
+
+    return timed_node
+
+
+def _timed_async(fn: Callable) -> Callable:
+    async def timed_node(state: AgentState) -> dict:
+        start = time.perf_counter()
+        return _with_timing(await fn(state), start)
+
+    return timed_node
+
+
+def _with_timing(update: object, start: float) -> dict:
+    elapsed = round((time.perf_counter() - start) * 1000, 2)
+    if isinstance(update, dict):
+        return {**update, _TIMING_KEY: elapsed}
+    return {_TIMING_KEY: elapsed}
 
 
 def _route_after_router(state: AgentState) -> str:
@@ -66,19 +104,29 @@ def build_graph(provider: LLMProvider | None = None, checkpointer=None):
     interrupt_enabled = checkpointer is not None
     graph = StateGraph(AgentState)
 
-    graph.add_node("scope_check", lambda s: scope_check_node(s, resolved))
-    graph.add_node("router", lambda s: router_node(s, resolved))
-    graph.add_node("memory_recall", memory_recall_node)
-    graph.add_node("triage", lambda s: triage_node(s, resolved))
-    graph.add_node("report_interpreter", lambda s: report_interpreter_node(s, resolved))
-    graph.add_node("medication", lambda s: medication_node(s, resolved))
-    graph.add_node("qc", lambda s: qc_node(s, resolved))
-    graph.add_node("rewrite", lambda s: rewrite_node(s, resolved))
+    # 所有节点经 _timed 包装，把单节点耗时写进状态增量（可观测性数据源）。
+    graph.add_node("scope_check", _timed("scope_check", lambda s: scope_check_node(s, resolved)))
+    graph.add_node("router", _timed("router", lambda s: router_node(s, resolved)))
+    graph.add_node("memory_recall", _timed("memory_recall", memory_recall_node))
+    graph.add_node("triage", _timed("triage", lambda s: triage_node(s, resolved)))
     graph.add_node(
-        "hitl", lambda s: escalate_node(s, resolved, interrupt_enabled=interrupt_enabled)
+        "report_interpreter",
+        _timed("report_interpreter", lambda s: report_interpreter_node(s, resolved)),
     )
-    graph.add_node("refuse", lambda s: refuse_node(s, resolved))
-    graph.add_node("responder", lambda s: responder_node(s, resolved))
+    # medication 为异步节点（ReAct 工具循环内 await 工具执行），
+    # 必须经 partial 传依赖——包一层同步 lambda 会丢掉 coroutine 语义。
+    graph.add_node("medication", _timed("medication", partial(medication_node, provider=resolved)))
+    graph.add_node("qc", _timed("qc", lambda s: qc_node(s, resolved)))
+    graph.add_node("rewrite", _timed("rewrite", rewrite_node))
+    graph.add_node(
+        "hitl",
+        _timed(
+            "hitl",
+            lambda s: escalate_node(s, resolved, interrupt_enabled=interrupt_enabled),
+        ),
+    )
+    graph.add_node("refuse", _timed("refuse", lambda s: refuse_node(s, resolved)))
+    graph.add_node("responder", _timed("responder", lambda s: responder_node(s, resolved)))
 
     graph.add_edge(START, "scope_check")
     graph.add_edge("scope_check", "router")

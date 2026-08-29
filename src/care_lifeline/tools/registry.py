@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
+from care_lifeline.config import get_settings
 from care_lifeline.graph.state import Citation
 from care_lifeline.memory import patient_memory
+from care_lifeline.tools import ddi_external
 from care_lifeline.tools.base import CareTool, ToolResult
 from care_lifeline.tools.medication import MedicationAgent
 from care_lifeline.tools.rag.registry import build_report_retriever
@@ -15,6 +17,14 @@ class GuidelineSearchTool(CareTool):
 
     name = "guideline_search"
     description = "检索中文临床指南语料，返回与问题最相关的指南片段。"
+    parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "检索主题"},
+            "k": {"type": "integer", "description": "返回片段数，默认 3"},
+        },
+        "required": ["query"],
+    }
 
     async def run(self, query: str, k: int = 3, **kwargs: Any) -> ToolResult:  # type: ignore[override]
         bundle = build_report_retriever()
@@ -37,6 +47,11 @@ class ReportParseTool(CareTool):
 
     name = "report_parse"
     description = "把自由文本的检验/体检报告解析为结构化指标字段。"
+    parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {"text": {"type": "string", "description": "报告原文"}},
+        "required": ["text"],
+    }
 
     async def run(self, text: str, **kwargs: Any) -> ToolResult:  # type: ignore[override]
         interpreter = MockReportInterpreter()
@@ -49,15 +64,31 @@ class ReportParseTool(CareTool):
 
 
 class DrugInteractionTool(CareTool):
-    """用药相互作用工具：包装 ``MedicationAgent``。"""
+    """用药相互作用工具：本地 DDI 表为基线，启用开关后合并 RxNav 实时结果。"""
 
     name = "drug_interaction"
-    description = "检查多药联用的相互作用风险（离线 DDI 知识库）。"
+    description = "检查多药联用的相互作用风险（本地 DDI 知识库 + 可选 RxNav 实时查询）。"
+    parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "drugs": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "待查药物名称列表（支持商品名，自动归一化）",
+            }
+        },
+        "required": ["drugs"],
+    }
 
     async def run(self, drugs: list[str] | str, **kwargs: Any) -> ToolResult:  # type: ignore[override]
         agent = MedicationAgent()
         names = agent.extract_drugs(drugs) if isinstance(drugs, str) else drugs
         hits = agent.check_interactions(names)
+        if get_settings().external_ddi_enabled:
+            external = await ddi_external.fetch_external_interactions(
+                [agent.normalize(n) for n in names]
+            )
+            hits = ddi_external.merge_interactions(hits, external)
         return ToolResult(
             ok=True,
             data={"interactions": [hit.model_dump() for hit in hits]},
@@ -70,6 +101,14 @@ class MetricTrendTool(CareTool):
 
     name = "metric_trend"
     description = "查询患者指定指标的纵向趋势数据（脱敏后指标值）。"
+    parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "patient_id": {"type": "integer", "description": "患者 ID"},
+            "name": {"type": "string", "description": "指标名称，如「收缩压」"},
+        },
+        "required": ["patient_id", "name"],
+    }
 
     async def run(self, patient_id: int, name: str, **kwargs: Any) -> ToolResult:  # type: ignore[override]
         trend = patient_memory.get_trend(patient_id, name)

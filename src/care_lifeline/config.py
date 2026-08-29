@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     qdrant_api_key: str = ""
     rag_collection: str = "care_guidelines"
     rag_enabled: bool = False
+    # 外部药物相互作用数据源（openFDA 药品标签）。默认关闭走本地 DDI 表；
+    # 开启后查询失败/超时自动降级回本地表，不影响可用性。
+    external_ddi_enabled: bool = False
+    openfda_base_url: str = "https://api.fda.gov"
+    openfda_timeout_seconds: float = Field(default=3.0, gt=0)
     # 数据飞轮反馈集路径：测试必须重定向到临时目录，避免污染真实评测数据。
     feedback_data_path: str = "data/eval/feedback_cases.json"
     # 主动触发调度间隔（秒）

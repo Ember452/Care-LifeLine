@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from care_lifeline.api.runtime import p95_latency_ms
+from care_lifeline.api.runtime import (
+    node_latency_summary,
+    p95_latency_ms,
+    qc_status_counts,
+    token_summary,
+)
 from care_lifeline.api.security import ROLE_ADMIN, CurrentUser, require_roles
 from care_lifeline.db import session_store
 from care_lifeline.db.engine import get_sessionmaker
@@ -35,6 +40,10 @@ class Metrics(BaseModel):
     leak_rate: float
     pending_reviews: int
     refuse_rate: float  # 兼容旧字段名
+    # 运行时可观测性（进程内采样，重启清零）。
+    node_latency: dict[str, dict[str, float]]  # 节点 → {count, p50_ms, p95_ms}
+    qc_status_counts: dict[str, int]  # 质控结论计数
+    token_usage: dict[str, object]  # token 用量汇总（全局 + 会话明细）
 
     model_config = {"extra": "forbid"}
 
@@ -108,6 +117,9 @@ def _metrics() -> Metrics:
         leak_rate=round(leaks / base, 4),
         pending_reviews=pending,
         refuse_rate=refusal_rate,
+        node_latency=node_latency_summary(),
+        qc_status_counts=qc_status_counts(),
+        token_usage=token_summary(),
     )
 
 

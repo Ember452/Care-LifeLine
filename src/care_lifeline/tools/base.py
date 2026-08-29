@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from care_lifeline.graph.state import Citation
 
@@ -27,11 +27,12 @@ class ToolResult:
 class CareTool(Protocol):
     """统一工具协议（契约 §5）。
 
-    现有能力（指南检索 / 报告解析 / 用药相互作用 / 指标趋势）以本协议包装，
-    供未来 real 模式下的 LLM tool-calling 分支调用；mock 模式走确定性节点。
+    ``parameters`` 以 JSON Schema 描述参数，供 LLM 原生 tool-calling
+    构造工具选择依据；mock 模式下由确定性脚本驱动同一通路。
     """
 
     name: str
     description: str
+    parameters: ClassVar[dict[str, Any]]
 
     async def run(self, **kwargs: Any) -> ToolResult: ...

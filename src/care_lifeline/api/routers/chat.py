@@ -13,14 +13,19 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from care_lifeline.api.middleware.phi import detect_phi_leak
-from care_lifeline.api.runtime import record_latency_ms
+from care_lifeline.api.runtime import (
+    record_latency_ms,
+    record_node_ms,
+    record_qc_status,
+    record_token_usage,
+)
 from care_lifeline.api.security import CurrentUser, get_current_user
 from care_lifeline.config import get_settings
 from care_lifeline.db import session_store
 from care_lifeline.graph.builder import build_graph
 from care_lifeline.graph.checkpointer import get_checkpointer
-from care_lifeline.graph.state import AgentState
-from care_lifeline.llm.provider import make_provider
+from care_lifeline.graph.state import AgentState, ToolTrace
+from care_lifeline.llm.provider import TokenUsage, make_provider
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +50,8 @@ _NODE_LABELS: dict[str, str] = {
     "responder": "回复生成",
 }
 
-# 节点 → 其底层调用的工具（tool_call 事件用）。
-_TOOL_BY_NODE: dict[str, str] = {
-    "report_interpreter": "report_parse",
-    "medication": "drug_interaction",
-    "triage": "guideline_search",
-    "memory_recall": "metric_trend",
-}
+# 工具调用事件里参数预览的最大长度（与前端 SSEToolCall 契约一致）。
+_TOOL_ARGS_PREVIEW_CHARS = 40
 
 
 def _persistence_enabled() -> bool:
@@ -194,6 +194,28 @@ def _qc_data(qc) -> dict:
     }
 
 
+def _tool_call_data(trace: ToolTrace) -> dict:
+    """把真实工具轨迹转成前端 ``SSEToolCall`` 契约格式。"""
+    preview = json.dumps(trace.args, ensure_ascii=False, default=str)
+    return {
+        "tool": trace.tool,
+        "args_preview": preview[:_TOOL_ARGS_PREVIEW_CHARS],
+        "ok": trace.ok,
+    }
+
+
+def _usage_data(usage: TokenUsage | None) -> dict | None:
+    """token 用量 → done 事件附加字段；无用量时为 ``None``。"""
+    if usage is None:
+        return None
+    return {
+        "input": usage.input_tokens,
+        "output": usage.output_tokens,
+        "total": usage.total_tokens,
+        "estimated": usage.estimated,
+    }
+
+
 def _create_hitl_review(req: ChatRequest, user: CurrentUser, state: AgentState) -> None:
     if not _persistence_enabled():
         return
@@ -278,7 +300,7 @@ async def chat_stream(
                 if prior:
                     initial["messages"] = prior + initial["messages"]
 
-        graph = build_graph(make_provider(), checkpointer=checkpointer)
+        graph = build_graph(provider := make_provider(), checkpointer=checkpointer)
         config = {"configurable": {"thread_id": req.session_id}} if checkpointer else None
         start = time.perf_counter()
         final_state: AgentState | None = None
@@ -299,16 +321,13 @@ async def chat_stream(
                                 "detail": _NODE_LABELS.get(node_name, ""),
                             },
                         )
-                        tool = _TOOL_BY_NODE.get(node_name)
-                        if tool is not None:
-                            yield _sse(
-                                "tool_call",
-                                {
-                                    "tool": tool,
-                                    "args_preview": req.message[:40],
-                                    "ok": True,
-                                },
-                            )
+                        # 单节点耗时（builder 计时包装器写入）→ 运行时指标。
+                        if isinstance(update, dict) and "perf_node_ms" in update:
+                            record_node_ms(node_name, float(update["perf_node_ms"]))
+                        # tool_call 事件来自节点的真实工具轨迹（不再用静态映射伪造）。
+                        if isinstance(update, dict) and update.get("tool_traces"):
+                            for trace in update["tool_traces"]:
+                                yield _sse("tool_call", _tool_call_data(trace))
                         if isinstance(update, dict) and update.get("memory_context"):
                             yield _sse(
                                 "memory",
@@ -330,6 +349,14 @@ async def chat_stream(
         record_latency_ms((time.perf_counter() - start) * 1000)
         state = final_state if final_state is not None else initial
 
+        # 运行时指标采集：质控结论计数 + 本请求 token 用量（provider 实例级）。
+        qc = state["qc_result"]
+        if qc is not None:
+            record_qc_status(qc.status)
+        usage = getattr(provider, "last_usage", None)
+        if usage is not None:
+            record_token_usage(req.session_id, usage)
+
         if interrupted:
             if _persistence_enabled():
                 with contextlib.suppress(Exception):
@@ -342,7 +369,6 @@ async def chat_stream(
             with contextlib.suppress(Exception):
                 await run_in_threadpool(_persist, req.session_id, user.user_id, req.message, state)
 
-        qc = state["qc_result"]
         if qc is not None and qc.status == "hitl":
             display = (
                 "检测到高风险信号，已为您转接人工医疗顾问；若情况紧急请立即拨打急救电话或前往急诊。"
@@ -352,7 +378,14 @@ async def chat_stream(
             for chunk in display.split("，"):
                 yield _sse("token", {"text": chunk})
             yield _sse("qc", _qc_data(qc))
-            yield _sse("done", {"final": display, "citations": []})
+            yield _sse(
+                "done",
+                {
+                    "final": display,
+                    "citations": [],
+                    "token_usage": _usage_data(usage),
+                },
+            )
             _create_hitl_review(req, user, state)
             return
 
@@ -361,7 +394,14 @@ async def chat_stream(
             yield _sse("meta", _meta_data(req, state))
             yield _sse("token", {"text": display})
             yield _sse("qc", _qc_data(qc))
-            yield _sse("done", {"final": display, "citations": []})
+            yield _sse(
+                "done",
+                {
+                    "final": display,
+                    "citations": [],
+                    "token_usage": _usage_data(usage),
+                },
+            )
             return
 
         yield _sse("meta", _meta_data(req, state))
@@ -383,6 +423,7 @@ async def chat_stream(
             {
                 "final": state["draft"],
                 "citations": [c.model_dump() for c in state["citations"]],
+                "token_usage": _usage_data(usage),
             },
         )
 

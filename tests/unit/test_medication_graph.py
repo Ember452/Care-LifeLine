@@ -30,9 +30,14 @@ def test_classify_intent_medication() -> None:
     assert risk == "routine"
 
 
-def test_medication_node_returns_warnings() -> None:
-    out = medication_node(_initial("华法林 阿司匹林 一起吃"), None)
+def test_medication_node_returns_warnings_and_trace() -> None:
+    out = asyncio.run(medication_node(_initial("华法林 阿司匹林 一起吃"), MockProvider()))
     assert out["medication_warnings"]
+    assert out["draft"]
+    traces = out["tool_traces"]
+    assert traces[0].tool == "drug_interaction"
+    assert traces[0].ok is True
+    assert "相互作用" in out["draft"]
 
 
 def test_graph_medication_flow_includes_warning_in_draft() -> None:
@@ -43,9 +48,21 @@ def test_graph_medication_flow_includes_warning_in_draft() -> None:
     assert "用药警示" in state["draft"]
 
 
-def test_graph_medication_flow_with_separators() -> None:
+def test_graph_medication_flow_records_tool_trace() -> None:
     state = asyncio.run(
         build_graph(MockProvider()).ainvoke(_initial("华法林，阿司匹林 一起吃有相互作用吗"))
     )
-    assert state["medication_warnings"]
-    assert "用药警示" in state["draft"]
+    traces = state["tool_traces"]
+    assert traces[0].tool == "drug_interaction"
+    assert traces[0].args["drugs"] == "华法林，阿司匹林 一起吃有相互作用吗"
+
+
+def test_graph_medication_qc_passes_with_agent_draft() -> None:
+    """改造前 medication 节点无 draft，QC 判 refused；现在应基于工具结果通过质控。"""
+    state = asyncio.run(
+        build_graph(MockProvider()).ainvoke(_initial("华法林，阿司匹林 一起吃有相互作用吗"))
+    )
+    qc = state["qc_result"]
+    assert qc is not None
+    assert qc.status == "passed"
+    assert "华法林" in state["draft"]

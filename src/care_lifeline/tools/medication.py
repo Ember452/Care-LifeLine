@@ -8,8 +8,9 @@ from pydantic import BaseModel
 class DrugInteraction(BaseModel):
     a: str
     b: str
-    severity: str  # contraindicated | major | moderate
+    severity: str  # contraindicated | major | moderate | minor
     note: str
+    source: str = "offline"  # offline=本地 DDI 表；rxnav=NLM RxNav 实时查询
 
 
 # 药品名归一化：别名/商品名 → 规范名（检索 DDI 表前先归一）。

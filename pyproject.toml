@@ -21,6 +21,7 @@ dependencies = [
     "aiosqlite>=0.20",
     "python-multipart",
     "pyjwt>=2.9",
+    "httpx>=0.27",
 ]
 
 [dependency-groups]
@@ -39,6 +40,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/care_lifeline"]
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
 
 [tool.uv]
 package = true
