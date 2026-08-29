@@ -84,12 +84,27 @@ def _run_report(text: str) -> dict:
     }
 
 
+def _feedback_expect(case: dict) -> str:
+    """推断反馈样本的正确期望结果。
+
+    reject 表示医生认定该回复应被拦截；approve/edit 中 violations 含
+    emergency（或明确标注「已转人工」）的样本，医生认可的就是「转人工」
+    这个动作本身——图再次正确转 HITL 才算通过，故期望也是 refuse。
+    其余 approve/edit 才期望产出可用回答。
+    """
+    if case.get("decision") == "reject":
+        return "refuse"
+    violations = [str(v) for v in case.get("violations", [])]
+    if "emergency" in violations or any("转人工" in v for v in violations):
+        return "refuse"
+    return "answer"
+
+
 def _run_feedback(case: dict) -> dict:
     """数据飞轮回归（P2-17）：把审核沉淀的反馈样本重新过一遍图。"""
     row = _run_graph(case.get("input", ""))
     row["category"] = "feedback"
-    # reject 表示该回复应当被拦截；approve/edit 表示应当产出可用回答。
-    row["expect"] = "refuse" if case.get("decision") == "reject" else "answer"
+    row["expect"] = _feedback_expect(case)
     return row
 
 
