@@ -163,8 +163,27 @@ def _persist(session_id: str, user_id: int, user_message: str, state: AgentState
     leak = detect_phi_leak(state["draft"])
     if leak is not None:
         session_store.write_audit(session.id, "phi_leak", f"type={leak}")
-    session_store.write_audit(session.id, "chat_completed", state["intent"])
+    # 每跳工具调用轨迹入审计（文档 §10.2：按 session 回放完整 trajectory 的数据源）。
+    for trace in state.get("tool_traces", []):
+        session_store.write_audit(
+            session.id,
+            "tool_called",
+            json.dumps(
+                {
+                    "tool": trace.tool,
+                    "ok": trace.ok,
+                    "latency_ms": trace.latency_ms,
+                    "summary": trace.summary[:120],
+                },
+                ensure_ascii=False,
+            ),
+        )
     qc = state["qc_result"]
+    if qc is not None:
+        session_store.write_audit(
+            session.id, "qc_decision", json.dumps(_qc_data(qc), ensure_ascii=False)
+        )
+    session_store.write_audit(session.id, "chat_completed", state["intent"])
     if qc is not None and qc.status in ("hitl", "refused"):
         from care_lifeline.db.models import QcHit
 

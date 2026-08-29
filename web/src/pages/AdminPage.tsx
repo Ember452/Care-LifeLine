@@ -29,6 +29,9 @@ const EVENT_LABEL: Record<string, string> = {
   hitl_review_revise: '审核修订',
   qc_rule_toggled: '规则启停',
   phi_leak: '隐私泄漏',
+  tool_called: '工具调用',
+  qc_decision: '质控结论',
+  trajectory_replayed: '轨迹重放',
 }
 
 function eventLabel(e: string): string {
@@ -38,7 +41,9 @@ function eventLabel(e: string): string {
 function eventColor(e: string): string {
   if (e === 'phi_leak') return 'red'
   if (e.startsWith('hitl_review')) return 'orange'
-  if (e === 'qc_rule_toggled') return 'purple'
+  if (e === 'qc_rule_toggled' || e === 'trajectory_replayed') return 'purple'
+  if (e === 'tool_called') return 'green'
+  if (e === 'qc_decision') return 'orange'
   return 'arcoblue'
 }
 

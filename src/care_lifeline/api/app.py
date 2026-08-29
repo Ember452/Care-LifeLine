@@ -17,6 +17,7 @@ from care_lifeline.api.routers import (
     ocr,
     patients,
     reports,
+    trajectories,
     workbench,
 )
 from care_lifeline.db import session_store
@@ -39,6 +40,7 @@ app.include_router(reports.router)
 app.include_router(patients.router)
 app.include_router(workbench.router)
 app.include_router(admin.router)
+app.include_router(trajectories.router)
 app.include_router(medication.router)
 app.include_router(ocr.router)
 
