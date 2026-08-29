@@ -437,10 +437,12 @@ async def chat_stream(
             # 记忆提议（ADR-0019）：从对话抽取候选变更，落 pending 提议等人工确认。
             # best-effort：抽取失败不影响对话本身。
             if req.patient_id:
-                with contextlib.suppress(Exception):
+                try:
                     await run_in_threadpool(
                         _propose_memory, req.session_id, req.patient_id, req.message, provider
                     )
+                except Exception:
+                    logger.exception("memory_propose_failed")
 
         if qc is not None and qc.status == "hitl":
             display = (
