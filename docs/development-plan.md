@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> ✅ **交付状态（2026-08-29）**：M0–M5 全部里程碑及后续增强批次（原生 tool-calling、openFDA 实时 DDI、评测双基线与校准、审计轨迹与时间旅行、结构化纵向记忆、Token 预算、Redis 锁、OCR 引擎、前端体验重构）均已交付——407 个测试全绿。下文勾选框为**执行历史**，不再逐项维护；当前事实以 `docs/system-design.md` 与 `docs/decisions/` 为准。
+
 **Goal:** 按本计划开发完成后，交付一个**可上线形态的完整全栈项目**——后端多 Agent 医疗平台 + 前端飞书级体验的 React 应用，Docker Compose 一键跑通，支持真实 LLM / Mock 双模式，含评测、审计、HITL 工作台与管理后台。
 
 **Architecture:** 后端 FastAPI + LangGraph（Supervisor 多 Agent + Checkpointer）分层（api → graph → 能力层，safety/audit 横切），PostgreSQL 存会话/审计/反馈/规则/评测，Qdrant 存指南向量；前端为独立 React SPA（`web/`），REST + SSE 流式与后端通信，飞书式布局与设计系统；两者通过 docker compose 编排。前端与后端在每个里程碑内**同步并行开发**，契约先行（§3 定义全部跨端接口）。

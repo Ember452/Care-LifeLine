@@ -623,8 +623,9 @@ care-lifeline/
 
 ## 13. 开发路线图（重排：6 周聚焦主线）
 
-> 原则：**垂直够深 > 水平铺开**。PillboxVision 与深度 Proactive 列为 P2，不做不伤主线。
-> 任务级拆分（Task Mx-y）以 `docs/development-plan.md` 为准（本文仅给方向）。截至 2026-08-28：M0–M2 已交付，下一步 M3。
+> 原则：**垂直够深 > 水平铺开**。
+> 任务级拆分（Task Mx-y）以 `docs/development-plan.md` 为准（本文仅给方向）。
+> **截至 2026-08-29：M0–M5 全部交付**，P2 演进项中 PillboxVision（rapidocr 可选引擎）、Proactive 深度锁（Redis 可选）也已落地；语义缓存与方案 C 维持演进预留（ADR-0017）。后续真实增强记录见 ADR-0011～0017。
 
 ### M0：工程骨架（~3 天）
 - uv + src layout 初始化；Makefile / pre-commit / CI 跑通（lint + type + test 门禁）。

@@ -6,14 +6,17 @@
 
 ## 亮点
 
-- **多 Agent 分级诊疗**：Router → Triage / Report / Medication → QC → Responder，全链路可观测、可回放
+- **真 Agent 工具调用**：ReAct 循环（原生 function calling）+ 真实工具轨迹贯通 SSE；openFDA 实时药物相互作用查询（离线 DDI 表兜底降级）
+- **多 Agent 分级诊疗**：Router → Triage / Report / Medication → 质控子图 → Responder，全链路可观测，支持按检查点时间旅行重放
 - **质控 Agent（灵魂）**：确定性规则引擎（可单测、可版本化）+ LLM 语义评审，安全 = 工程能力
 - **双模式 LLM**：`LLM_MODE=mock` 零外部依赖可跑；`real` 走 OpenAI 兼容协议（火山方舟 Doubao / DeepSeek），仅改 `LLM_BASE_URL`/`LLM_MODEL`/`LLM_API_KEY` 三项即可切换
 - **RAG 指南检索**：混合检索（向量 + BM25，RRF 融合），默认零依赖内存库；配置 `QDRANT_URL` 后启用 Qdrant 向量库
 - **持久化与会话恢复**：PostgreSQL + LangGraph PostgresSaver（checkpointer）实现跨请求会话恢复；SQLite 兜底零依赖
 - **HITL 医生工作台 + 管理后台**：待审队列、编辑/采纳/驳回、审计、规则开关、运营指标
-- **主动触发**：后台定时扫描患者指标、生成复诊提醒（含文件分布式锁，防多实例重复跑）
-- **评测体系**：拒答率 / 安全率 / 转人工率 / 合规率 / faithfulness / P95 多维指标，含明确基线与 `make eval` 报告
+- **结构化纵向记忆**：指标时序 + 用药史/过敏史/随访计划注入分诊上下文（隐私边界：仅结构化脱敏字段）
+- **主动触发**：后台定时扫描患者指标、生成复诊提醒（文件锁 / Redis 锁可选，防多实例重复跑）
+- **评测体系**：拒答率 / 安全率 / 转人工率 / 合规率 / faithfulness / LLM 裁判有据率 / P95；mock 与 real 双基线报告、QC 阈值 PR 校准、指南检索 hit@k 评测
+- **审计与可观测**：全链路审计轨迹（每跳工具/质控结论/人工干预）、每节点延迟与会话 token 成本、QC 拦截计数进管理后台
 - **数据闭环**：人工反馈 / HITL 决议 / 评测用例沉淀，系统越用越安全
 
 ## 快速开始
