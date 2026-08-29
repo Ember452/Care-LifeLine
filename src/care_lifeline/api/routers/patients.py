@@ -9,7 +9,9 @@ from sqlalchemy import select
 
 from care_lifeline.api.security import CurrentUser, get_current_user
 from care_lifeline.db.engine import get_sessionmaker
-from care_lifeline.db.models import PatientMetric
+from care_lifeline.db.models import (
+    PatientMetric,
+)
 from care_lifeline.memory import patient_memory
 from care_lifeline.proactive import scheduler, trigger
 
@@ -136,3 +138,116 @@ def _all_metrics(patient_id: int) -> list:
             .order_by(PatientMetric.name, PatientMetric.measured_at)
         )
         return list(session.execute(stmt).scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# 结构化纵向记忆：用药史 / 过敏史 / 随访计划（文档 §7.4）
+# ---------------------------------------------------------------------------
+
+
+class MedicationCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    dosage: str | None = Field(default=None, max_length=64)
+    frequency: str | None = Field(default=None, max_length=64)
+
+
+class AllergyCreate(BaseModel):
+    allergen: str = Field(min_length=1, max_length=64)
+    reaction: str | None = Field(default=None, max_length=128)
+    severity: str = Field(default="moderate", pattern="^(mild|moderate|severe)$")
+
+
+class FollowUpCreate(BaseModel):
+    plan: str = Field(min_length=1, max_length=255)
+    due_date: datetime | None = None
+
+
+@router.post("/{patient_id}/medications", response_model=dict)
+def add_medication(
+    patient_id: int, body: MedicationCreate, user: CurrentUser = Depends(get_current_user)
+) -> dict:
+    row = patient_memory.append_medication(patient_id, body.name, body.dosage, body.frequency)
+    return {
+        "id": row.id,
+        "name": row.name,
+        "dosage": row.dosage,
+        "frequency": row.frequency,
+        "status": row.status,
+    }
+
+
+@router.get("/{patient_id}/medications", response_model=list[dict])
+def medication_list(
+    patient_id: int, user: CurrentUser = Depends(get_current_user)
+) -> list[dict]:
+    return [
+        {
+            "id": m.id,
+            "name": m.name,
+            "dosage": m.dosage,
+            "frequency": m.frequency,
+            "status": m.status,
+        }
+        for m in patient_memory.list_medications(patient_id, active_only=False)
+    ]
+
+
+@router.delete("/{patient_id}/medications/{medication_id}", response_model=dict)
+def stop_medication(
+    patient_id: int, medication_id: int, user: CurrentUser = Depends(get_current_user)
+) -> dict:
+    return {"ok": patient_memory.stop_medication(medication_id)}
+
+
+@router.post("/{patient_id}/allergies", response_model=dict)
+def add_allergy(
+    patient_id: int, body: AllergyCreate, user: CurrentUser = Depends(get_current_user)
+) -> dict:
+    row = patient_memory.append_allergy(patient_id, body.allergen, body.reaction, body.severity)
+    return {
+        "id": row.id,
+        "allergen": row.allergen,
+        "reaction": row.reaction,
+        "severity": row.severity,
+    }
+
+
+@router.get("/{patient_id}/allergies", response_model=list[dict])
+def allergy_list(patient_id: int, user: CurrentUser = Depends(get_current_user)) -> list[dict]:
+    return [
+        {"id": a.id, "allergen": a.allergen, "reaction": a.reaction, "severity": a.severity}
+        for a in patient_memory.list_allergies(patient_id)
+    ]
+
+
+@router.post("/{patient_id}/followups", response_model=dict)
+def add_followup(
+    patient_id: int, body: FollowUpCreate, user: CurrentUser = Depends(get_current_user)
+) -> dict:
+    row = patient_memory.add_followup(patient_id, body.plan, body.due_date)
+    return {
+        "id": row.id,
+        "plan": row.plan,
+        "due_date": str(row.due_date) if row.due_date else None,
+        "status": row.status,
+    }
+
+
+@router.get("/{patient_id}/followups", response_model=list[dict])
+def followup_list(patient_id: int, user: CurrentUser = Depends(get_current_user)) -> list[dict]:
+    return [
+        {
+            "id": f.id,
+            "plan": f.plan,
+            "due_date": str(f.due_date) if f.due_date else None,
+            "status": f.status,
+        }
+        for f in patient_memory.list_followups(patient_id, pending_only=False)
+    ]
+
+
+@router.post("/{patient_id}/followups/{followup_id}/complete", response_model=dict)
+def complete_followup(
+    patient_id: int, followup_id: int, user: CurrentUser = Depends(get_current_user)
+) -> dict:
+    return {"ok": patient_memory.complete_followup(followup_id)}

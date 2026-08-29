@@ -116,6 +116,47 @@ class PatientMetric(Base):
     measured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class PatientMedication(Base):
+    """结构化用药史（文档 §7.4：跨会话仅保留结构化脱敏字段）。"""
+
+    __tablename__ = "patient_medications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    dosage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    frequency: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active | stopped
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PatientAllergy(Base):
+    """过敏史（分诊安全关键上下文）。"""
+
+    __tablename__ = "patient_allergies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
+    allergen: Mapped[str] = mapped_column(String(64))
+    reaction: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # mild | moderate | severe
+    severity: Mapped[str] = mapped_column(String(16), default="moderate")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PatientFollowUp(Base):
+    """随访计划。"""
+
+    __tablename__ = "patient_followups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
+    plan: Mapped[str] = mapped_column(String(255))
+    due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | done
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class ReminderRow(Base):
     """主动触达提醒落库（P2-F：重启不丢、多实例一致）。
 

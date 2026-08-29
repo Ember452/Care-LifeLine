@@ -72,6 +72,37 @@ CREATE TABLE IF NOT EXISTS patient_metrics (
 );
 CREATE INDEX IF NOT EXISTS ix_patient_metrics_patient ON patient_metrics(patient_id);
 
+CREATE TABLE IF NOT EXISTS patient_medications (
+    id            SERIAL PRIMARY KEY,
+    patient_id    INTEGER NOT NULL REFERENCES patients(id),
+    name          VARCHAR(64) NOT NULL,
+    dosage        VARCHAR(64),
+    frequency     VARCHAR(64),
+    status        VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_patient_medications_patient ON patient_medications(patient_id);
+
+CREATE TABLE IF NOT EXISTS patient_allergies (
+    id            SERIAL PRIMARY KEY,
+    patient_id    INTEGER NOT NULL REFERENCES patients(id),
+    allergen      VARCHAR(64) NOT NULL,
+    reaction      VARCHAR(128),
+    severity      VARCHAR(16) NOT NULL DEFAULT 'moderate',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_patient_allergies_patient ON patient_allergies(patient_id);
+
+CREATE TABLE IF NOT EXISTS patient_followups (
+    id            SERIAL PRIMARY KEY,
+    patient_id    INTEGER NOT NULL REFERENCES patients(id),
+    plan          VARCHAR(255) NOT NULL,
+    due_date      TIMESTAMPTZ,
+    status        VARCHAR(16) NOT NULL DEFAULT 'pending',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_patient_followups_patient ON patient_followups(patient_id);
+
 CREATE TABLE IF NOT EXISTS hitl_reviews (
     id              SERIAL PRIMARY KEY,
     session_id      INTEGER NOT NULL REFERENCES sessions(id),

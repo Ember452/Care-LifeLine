@@ -5,7 +5,13 @@ from datetime import datetime
 from sqlalchemy import select
 
 from care_lifeline.db.engine import get_sessionmaker
-from care_lifeline.db.models import Patient, PatientMetric
+from care_lifeline.db.models import (
+    Patient,
+    PatientAllergy,
+    PatientFollowUp,
+    PatientMedication,
+    PatientMetric,
+)
 
 
 def ensure_patient(patient_id: int, name: str | None = None) -> Patient:
@@ -127,3 +133,139 @@ def list_patient_ids() -> list[int]:
     with maker() as session:
         stmt = select(PatientMetric.patient_id).distinct()
         return list(session.execute(stmt).scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# 结构化纵向记忆：用药史 / 过敏史 / 随访计划（文档 §7.4）
+# ---------------------------------------------------------------------------
+
+
+def append_medication(
+    patient_id: int, name: str, dosage: str | None = None, frequency: str | None = None
+) -> PatientMedication:
+    """新增一条在用药物记录（默认 active）。"""
+    ensure_patient(patient_id)
+    maker = get_sessionmaker()
+    with maker() as session:
+        row = PatientMedication(
+            patient_id=patient_id, name=name, dosage=dosage, frequency=frequency
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+
+
+def list_medications(patient_id: int, active_only: bool = True) -> list[PatientMedication]:
+    """列出用药记录；``active_only`` 只返回在用药物。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        stmt = select(PatientMedication).where(PatientMedication.patient_id == patient_id)
+        if active_only:
+            stmt = stmt.where(PatientMedication.status == "active")
+        return list(session.scalars(stmt.order_by(PatientMedication.id)).all())
+
+
+def stop_medication(medication_id: int) -> bool:
+    """把用药记录标记为 stopped；不存在返回 ``False``。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        row = session.get(PatientMedication, medication_id)
+        if row is None:
+            return False
+        row.status = "stopped"
+        session.commit()
+        return True
+
+
+def append_allergy(
+    patient_id: int, allergen: str, reaction: str | None = None, severity: str = "moderate"
+) -> PatientAllergy:
+    """新增一条过敏记录。"""
+    ensure_patient(patient_id)
+    maker = get_sessionmaker()
+    with maker() as session:
+        row = PatientAllergy(
+            patient_id=patient_id, allergen=allergen, reaction=reaction, severity=severity
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+
+
+def list_allergies(patient_id: int) -> list[PatientAllergy]:
+    """列出全部过敏记录。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        return list(
+            session.scalars(
+                select(PatientAllergy)
+                .where(PatientAllergy.patient_id == patient_id)
+                .order_by(PatientAllergy.id)
+            ).all()
+        )
+
+
+def add_followup(patient_id: int, plan: str, due_date: datetime | None = None) -> PatientFollowUp:
+    """新增一条随访计划（默认 pending）。"""
+    ensure_patient(patient_id)
+    maker = get_sessionmaker()
+    with maker() as session:
+        row = PatientFollowUp(patient_id=patient_id, plan=plan, due_date=due_date)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+
+
+def list_followups(patient_id: int, pending_only: bool = True) -> list[PatientFollowUp]:
+    """列出随访计划；``pending_only`` 只返回未完成项。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        stmt = select(PatientFollowUp).where(PatientFollowUp.patient_id == patient_id)
+        if pending_only:
+            stmt = stmt.where(PatientFollowUp.status == "pending")
+        return list(session.scalars(stmt.order_by(PatientFollowUp.id)).all())
+
+
+def complete_followup(followup_id: int) -> bool:
+    """把随访计划标记为 done；不存在返回 ``False``。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        row = session.get(PatientFollowUp, followup_id)
+        if row is None:
+            return False
+        row.status = "done"
+        session.commit()
+        return True
+
+
+def structured_summary(patient_id: int) -> str:
+    """把用药/过敏/随访拼成注入分诊上下文的摘要文本；全空返回空串。
+
+    只含结构化脱敏字段（不含自由文本长期留存），符合文档 §7.4 隐私边界。
+    """
+    sections: list[str] = []
+    meds = list_medications(patient_id, active_only=True)
+    if meds:
+        parts = [
+            f"{m.name}" + (f"（{m.dosage}，{m.frequency}）" if m.dosage or m.frequency else "")
+            for m in meds
+        ]
+        sections.append("正在用药：" + "、".join(parts))
+    allergies = list_allergies(patient_id)
+    if allergies:
+        parts = [
+            f"{a.allergen}（{a.severity}）" + (f"：{a.reaction}" if a.reaction else "")
+            for a in allergies
+        ]
+        sections.append("过敏史：" + "、".join(parts))
+    followups = list_followups(patient_id, pending_only=True)
+    if followups:
+        parts = [
+            f.plan + (f"（截止 {f.due_date:%Y-%m-%d}）" if f.due_date else "")
+            for f in followups
+        ]
+        sections.append("待办随访：" + "、".join(parts))
+    return "；".join(sections)
