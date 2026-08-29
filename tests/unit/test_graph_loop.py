@@ -6,11 +6,12 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
-from care_lifeline.graph import builder as builder_module
-from care_lifeline.graph.builder import _MAX_RETRY, _RECURSION_LIMIT, _route_after_qc, build_graph
+from care_lifeline.graph.builder import _RECURSION_LIMIT, build_graph
 from care_lifeline.graph.nodes.hitl import ESCALATION_DRAFT, draft_from_decision
 from care_lifeline.graph.nodes.refuse import refusal_text
 from care_lifeline.graph.state import AgentState, QCResult
+from care_lifeline.graph.subgraphs import qc_review as qc_review_module
+from care_lifeline.graph.subgraphs.qc_review import MAX_RETRY, route_after_qc
 from care_lifeline.llm.mock_provider import MockProvider
 from care_lifeline.safety.scope import ScopeVerdict, classify_scope
 
@@ -47,27 +48,27 @@ def _qc(status: str, retry_count: int = 0) -> AgentState:
 
 
 def test_max_retry_常量为2() -> None:
-    assert _MAX_RETRY == 2
+    assert MAX_RETRY == 2
     assert _RECURSION_LIMIT == 30
 
 
 def test_route_after_qc_warning且未达上限_回边rewrite() -> None:
-    assert _route_after_qc(_qc("warning", retry_count=0)) == "rewrite"
-    assert _route_after_qc(_qc("warning", retry_count=1)) == "rewrite"
+    assert route_after_qc(_qc("warning", retry_count=0)) == "rewrite"
+    assert route_after_qc(_qc("warning", retry_count=1)) == "rewrite"
 
 
-def test_route_after_qc_warning但已达上限_收口responder() -> None:
-    assert _route_after_qc(_qc("warning", retry_count=2)) == "responder"
+def test_route_after_qc_warning但已达上限_结束子图() -> None:
+    assert route_after_qc(_qc("warning", retry_count=2)) == "end"
 
 
-def test_route_after_qc_非warning状态_直接收口responder() -> None:
-    assert _route_after_qc(_qc("passed")) == "responder"
-    assert _route_after_qc(_qc("hitl")) == "responder"
-    assert _route_after_qc(_qc("refused")) == "responder"
+def test_route_after_qc_非warning状态_直接结束子图() -> None:
+    assert route_after_qc(_qc("passed")) == "end"
+    assert route_after_qc(_qc("hitl")) == "end"
+    assert route_after_qc(_qc("refused")) == "end"
 
 
 def test_route_after_qc_质控结果缺失_按passed处理() -> None:
-    assert _route_after_qc(_initial_state("测试")) == "responder"
+    assert route_after_qc(_initial_state("测试")) == "end"
 
 
 def test_graph_重写始终不修复_仍在三次质控内终止() -> None:
@@ -76,12 +77,12 @@ def test_graph_重写始终不修复_仍在三次质控内终止() -> None:
     def never_fixes(state: AgentState, provider=None) -> dict:
         return {"retry_count": state.get("retry_count", 0) + 1}
 
-    original = builder_module.rewrite_node
-    builder_module.rewrite_node = never_fixes  # type: ignore[assignment]
+    original = qc_review_module.rewrite_node
+    qc_review_module.rewrite_node = never_fixes  # type: ignore[assignment]
     try:
         result = build_graph(MockProvider()).invoke(_initial_state("最近化验单说贫血"))
     finally:
-        builder_module.rewrite_node = original  # type: ignore[assignment]
+        qc_review_module.rewrite_node = original  # type: ignore[assignment]
 
     assert result["retry_count"] == 2
     assert result["qc_result"].status == "warning"

@@ -12,7 +12,6 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from care_lifeline.api.middleware.phi import detect_phi_leak
 from care_lifeline.api.runtime import (
     record_latency_ms,
     record_node_ms,
@@ -26,6 +25,7 @@ from care_lifeline.graph.builder import build_graph
 from care_lifeline.graph.checkpointer import get_checkpointer
 from care_lifeline.graph.state import AgentState, ToolTrace
 from care_lifeline.llm.provider import TokenUsage, make_provider
+from care_lifeline.safety.phi import detect_phi_leak
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +43,7 @@ _NODE_LABELS: dict[str, str] = {
     "triage": "分诊",
     "report_interpreter": "报告解读",
     "medication": "用药审查",
-    "qc": "质控",
-    "rewrite": "重写",
+    "qc_review": "质控评审",
     "hitl": "转人工",
     "refuse": "拒答",
     "responder": "回复生成",

@@ -1,6 +1,6 @@
 import inspect
 import time
-from collections.abc import Callable, Hashable
+from collections.abc import Callable
 from functools import partial
 
 from langgraph.graph import END, START, StateGraph
@@ -8,24 +8,19 @@ from langgraph.graph import END, START, StateGraph
 from care_lifeline.graph.nodes.hitl import escalate_node
 from care_lifeline.graph.nodes.medication import medication_node
 from care_lifeline.graph.nodes.memory import memory_recall_node
-from care_lifeline.graph.nodes.qc import qc_node
 from care_lifeline.graph.nodes.refuse import refuse_node
 from care_lifeline.graph.nodes.report_interpreter import report_interpreter_node
 from care_lifeline.graph.nodes.responder import responder_node
-from care_lifeline.graph.nodes.rewrite import rewrite_node
 from care_lifeline.graph.nodes.router import router_node, scope_check_node
 from care_lifeline.graph.nodes.triage import triage_node
 from care_lifeline.graph.state import AgentState
+from care_lifeline.graph.subgraphs.qc_review import build_qc_review_subgraph
 from care_lifeline.llm.provider import LLMProvider, make_provider
 
-# 重写上限：qc 判 warning 时最多回边重写 2 次（共 3 次质控），之后强制进 responder。
-_MAX_RETRY = 2
 # 兜底：即使条件边逻辑出错也不会无限循环（LangGraph 超限抛 GraphRecursionError）。
 _RECURSION_LIMIT = 30
-# 所有会汇聚到质控的上游节点。
+# 所有会汇聚到质控子图的上游节点。
 _QC_UPSTREAM_NODES = ("triage", "report_interpreter", "medication", "hitl", "refuse")
-# 质控出口：warning 且未达重写上限时回边 rewrite，否则收口到 responder。
-_QC_ROUTES: dict[Hashable, str] = {"rewrite": "rewrite", "responder": "responder"}
 
 
 # 节点耗时在状态增量里的键名（SSE/指标层消费；随状态存续，体积仅一个浮点数）。
@@ -79,19 +74,13 @@ def _route_after_memory(state: AgentState) -> str:
     return "medication" if state.get("intent") == "medication" else "triage"
 
 
-def _route_after_qc(state: AgentState) -> str:
-    qc = state.get("qc_result")
-    status = qc.status if qc is not None else "passed"
-    should_rewrite = status == "warning" and state.get("retry_count", 0) < _MAX_RETRY
-    return "rewrite" if should_rewrite else "responder"
-
-
 def build_graph(provider: LLMProvider | None = None, checkpointer=None):
     """Build the triage graph as a cyclic agent loop (契约 §4).
 
-    ``START → scope_check → router → {hitl|refuse|report|memory_recall} → qc``，
-    其中 triage / medication 先经 ``memory_recall`` 注入患者纵向记忆（P1-F）；
-    qc 判 warning 且未达重写上限时回边到 ``rewrite`` 再次质控，否则进 ``responder``。
+    ``START → scope_check → router → {hitl|refuse|report|memory_recall}
+    → qc_review → responder``，其中 triage / medication 先经
+    ``memory_recall`` 注入患者纵向记忆（P1-F）；质控的 warning 重写回环
+    封装在 ``qc_review`` 子图内部（ADR-0015），主图不再感知重写细节。
 
     Args:
         provider: LLM 提供者，默认按配置的 ``llm_mode`` 创建。
@@ -116,8 +105,9 @@ def build_graph(provider: LLMProvider | None = None, checkpointer=None):
     # medication 为异步节点（ReAct 工具循环内 await 工具执行），
     # 必须经 partial 传依赖——包一层同步 lambda 会丢掉 coroutine 语义。
     graph.add_node("medication", _timed("medication", partial(medication_node, provider=resolved)))
-    graph.add_node("qc", _timed("qc", lambda s: qc_node(s, resolved)))
-    graph.add_node("rewrite", _timed("rewrite", rewrite_node))
+    # 编译子图经 .invoke 接入（CompiledStateGraph 不可直接调用）。
+    qc_subgraph = build_qc_review_subgraph(resolved)
+    graph.add_node("qc_review", _timed("qc_review", qc_subgraph.invoke))
     graph.add_node(
         "hitl",
         _timed(
@@ -146,9 +136,8 @@ def build_graph(provider: LLMProvider | None = None, checkpointer=None):
         {"triage": "triage", "medication": "medication"},
     )
     for node in _QC_UPSTREAM_NODES:
-        graph.add_edge(node, "qc")
-    graph.add_conditional_edges("qc", _route_after_qc, _QC_ROUTES)
-    graph.add_edge("rewrite", "qc")
+        graph.add_edge(node, "qc_review")
+    graph.add_edge("qc_review", "responder")
     graph.add_edge("responder", END)
 
     compiled = graph.compile(checkpointer=checkpointer)

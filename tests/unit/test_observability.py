@@ -87,4 +87,4 @@ async def _collect_timings() -> set[str]:
 
 def test_all_nodes_report_timing() -> None:
     timed_nodes = asyncio.run(_collect_timings())
-    assert {"scope_check", "router", "triage", "qc", "responder"} <= timed_nodes
+    assert {"scope_check", "router", "triage", "qc_review", "responder"} <= timed_nodes
