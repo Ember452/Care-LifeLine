@@ -88,6 +88,34 @@ def get_trend(patient_id: int, name: str) -> list[PatientMetric]:
         return list(session.execute(stmt).scalars().all())
 
 
+def metric_snapshot(patient_id: int) -> dict[str, tuple[float, str | None, float | None]]:
+    """返回各指标最新值快照 ``{指标名: (最新值, 单位, 较前值变化)}``。
+
+    单次查询取全量时序后在内存聚合（避免逐指标 N+1）；该患者无任何
+    指标时返回空 dict。供纵向记忆节点（P1-F）生成摘要使用。
+    """
+    maker = get_sessionmaker()
+    with maker() as session:
+        rows = list(
+            session.execute(
+                select(PatientMetric)
+                .where(PatientMetric.patient_id == patient_id)
+                .order_by(PatientMetric.measured_at, PatientMetric.id)
+            ).scalars()
+        )
+    latest: dict[str, PatientMetric] = {}
+    previous: dict[str, PatientMetric | None] = {}
+    for row in rows:
+        previous[row.name] = latest.get(row.name)
+        latest[row.name] = row
+    snapshot: dict[str, tuple[float, str | None, float | None]] = {}
+    for name, row in latest.items():
+        prior = previous[name]
+        delta = row.value - prior.value if prior is not None else None
+        snapshot[name] = (row.value, row.unit, delta)
+    return snapshot
+
+
 def latest_value(patient_id: int, name: str) -> float | None:
     trend = get_trend(patient_id, name)
     return trend[-1].value if trend else None

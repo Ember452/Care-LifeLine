@@ -33,7 +33,7 @@ class ReportResult(BaseModel):
 
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
-    patient_id: str | None
+    patient_id: int | None  # 患者 DB 主键；提供时 memory_recall 节点注入纵向记忆
     intent: str  # emergency | medication | report | triage | refuse
     risk_level: str  # routine | urgent | critical
     # 以下三个字段由循环图内部维护，调用方可省略（NotRequired 保证旧调用点不破坏）。

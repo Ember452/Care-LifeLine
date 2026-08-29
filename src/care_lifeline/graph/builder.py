@@ -4,6 +4,7 @@ from langgraph.graph import END, START, StateGraph
 
 from care_lifeline.graph.nodes.hitl import escalate_node
 from care_lifeline.graph.nodes.medication import medication_node
+from care_lifeline.graph.nodes.memory import memory_recall_node
 from care_lifeline.graph.nodes.qc import qc_node
 from care_lifeline.graph.nodes.refuse import refuse_node
 from care_lifeline.graph.nodes.report_interpreter import report_interpreter_node
@@ -30,7 +31,14 @@ def _route_after_router(state: AgentState) -> str:
     if state.get("hitl_required"):
         return "hitl"
     intent = state.get("intent", "triage")
-    return intent if intent in ("report", "triage", "medication") else "triage"
+    if intent in ("report",):
+        return intent
+    # triage / medication 先经过 memory_recall 注入患者纵向记忆（P1-F）。
+    return "memory_recall"
+
+
+def _route_after_memory(state: AgentState) -> str:
+    return "medication" if state.get("intent") == "medication" else "triage"
 
 
 def _route_after_qc(state: AgentState) -> str:
@@ -43,7 +51,8 @@ def _route_after_qc(state: AgentState) -> str:
 def build_graph(provider: LLMProvider | None = None, checkpointer=None):
     """Build the triage graph as a cyclic agent loop (契约 §4).
 
-    ``START → scope_check → router → {hitl|refuse|triage|report|medication} → qc``，
+    ``START → scope_check → router → {hitl|refuse|report|memory_recall} → qc``，
+    其中 triage / medication 先经 ``memory_recall`` 注入患者纵向记忆（P1-F）；
     qc 判 warning 且未达重写上限时回边到 ``rewrite`` 再次质控，否则进 ``responder``。
 
     Args:
@@ -59,6 +68,7 @@ def build_graph(provider: LLMProvider | None = None, checkpointer=None):
 
     graph.add_node("scope_check", lambda s: scope_check_node(s, resolved))
     graph.add_node("router", lambda s: router_node(s, resolved))
+    graph.add_node("memory_recall", memory_recall_node)
     graph.add_node("triage", lambda s: triage_node(s, resolved))
     graph.add_node("report_interpreter", lambda s: report_interpreter_node(s, resolved))
     graph.add_node("medication", lambda s: medication_node(s, resolved))
@@ -79,9 +89,13 @@ def build_graph(provider: LLMProvider | None = None, checkpointer=None):
             "hitl": "hitl",
             "refuse": "refuse",
             "report": "report_interpreter",
-            "triage": "triage",
-            "medication": "medication",
+            "memory_recall": "memory_recall",
         },
+    )
+    graph.add_conditional_edges(
+        "memory_recall",
+        _route_after_memory,
+        {"triage": "triage", "medication": "medication"},
     )
     for node in _QC_UPSTREAM_NODES:
         graph.add_edge(node, "qc")

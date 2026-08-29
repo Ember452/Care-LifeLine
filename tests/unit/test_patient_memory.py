@@ -49,3 +49,14 @@ def test_append_metric_auto_creates_patient_row(db) -> None:
     patient_memory.append_metric(42, "空腹血糖", 7.2, "mmol/L")
     patients = patient_memory.list_patients()
     assert any(p.id == 42 for p in patients)
+
+
+def test_metric_snapshot_aggregates_latest_and_delta(db) -> None:
+    """纵向记忆快照（P1-F）：最新值、单位与较前值变化一次聚合，无数据为空。"""
+    assert patient_memory.metric_snapshot(1) == {}
+    patient_memory.append_metric(1, "收缩压", 140.0, "mmHg")
+    patient_memory.append_metric(1, "收缩压", 150.0, "mmHg")
+    patient_memory.append_metric(1, "空腹血糖", 7.2, "mmol/L")
+    snapshot = patient_memory.metric_snapshot(1)
+    assert snapshot["收缩压"] == (150.0, "mmHg", 10.0)
+    assert snapshot["空腹血糖"] == (7.2, "mmol/L", None)

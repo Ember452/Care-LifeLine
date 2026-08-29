@@ -34,6 +34,7 @@ _HITL_INTERRUPT_COPY = (
 _NODE_LABELS: dict[str, str] = {
     "scope_check": "请求范围判定",
     "router": "意图路由",
+    "memory_recall": "调取患者纵向记忆",
     "triage": "分诊",
     "report_interpreter": "报告解读",
     "medication": "用药审查",
@@ -49,6 +50,7 @@ _TOOL_BY_NODE: dict[str, str] = {
     "report_interpreter": "report_parse",
     "medication": "drug_interaction",
     "triage": "guideline_search",
+    "memory_recall": "metric_trend",
 }
 
 
@@ -62,6 +64,8 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     session_id: str
     message: str
+    # 可选患者上下文：提供时图内 memory_recall 节点注入纵向指标摘要（P1-F）。
+    patient_id: int | None = None
 
 
 class CreateSessionRequest(BaseModel):
@@ -127,10 +131,10 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _initial_state(message: str) -> AgentState:
+def _initial_state(message: str, patient_id: int | None = None) -> AgentState:
     return {
         "messages": [HumanMessage(message)],
-        "patient_id": None,
+        "patient_id": patient_id,
         "intent": "",
         "risk_level": "routine",
         "citations": [],
@@ -232,8 +236,12 @@ async def chat_stream(
         )
 
     async def generate() -> AsyncIterator[str]:
-        initial = _initial_state(req.message)
-        if _persistence_enabled():
+        # 断线重连间隔（P2-A：SSE 工程细节补齐）。
+        yield "retry: 3000\n\n"
+        checkpointer = get_checkpointer()
+        initial = _initial_state(req.message, req.patient_id)
+        # 有 checkpointer 时历史由 checkpoint 提供，避免 DB 前置消息重复注入。
+        if checkpointer is None and _persistence_enabled():
             with contextlib.suppress(Exception):
                 session = await run_in_threadpool(
                     session_store.get_or_create_session,
