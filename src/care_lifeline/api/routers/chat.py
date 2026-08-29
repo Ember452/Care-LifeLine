@@ -215,6 +215,31 @@ def _create_hitl_review(req: ChatRequest, user: CurrentUser, state: AgentState) 
             session_store.write_audit(target.id, "hitl_review_created", user.username)
 
 
+def _persist_interrupted(req: ChatRequest, user: CurrentUser) -> None:
+    """interrupt 真挂起分支的落库配套（P1-E）。
+
+    图在 hitl 节点暂停时还没有 draft/qc 结论，这里用标准转人工文案兜底，
+    保证工作台复核队列、审计与消息流不缺记录。
+    """
+    from care_lifeline.db.models import QcHit
+
+    session = session_store.get_or_create_session(
+        req.session_id, user_id=user.user_id, title=req.message[:40]
+    )
+    session_store.append_message(session.id, "user", req.message)
+    session_store.record_qc_hits(
+        session.id, None, [QcHit(rule_code="qc", severity="hitl", session_id=session.id)]
+    )
+    session_store.create_hitl_review(
+        session_id=session.id,
+        thread_id=req.session_id,
+        input_text=req.message,
+        draft=_HITL_INTERRUPT_COPY,
+        violations_json=json.dumps(["hitl_interrupt"], ensure_ascii=False),
+    )
+    session_store.write_audit(session.id, "hitl_review_created", user.username)
+
+
 async def _stream_interrupt(req: ChatRequest, state: AgentState) -> AsyncIterator[str]:
     """interrupt 真挂起分支：只发明确文案，不吐空 token（契约 §4.1）。"""
     yield _sse("meta", _meta_data(req, state))
@@ -253,8 +278,8 @@ async def chat_stream(
                 if prior:
                     initial["messages"] = prior + initial["messages"]
 
-        graph = build_graph(make_provider(), checkpointer=get_checkpointer())
-        config = {"configurable": {"thread_id": req.session_id}} if get_checkpointer() else None
+        graph = build_graph(make_provider(), checkpointer=checkpointer)
+        config = {"configurable": {"thread_id": req.session_id}} if checkpointer else None
         start = time.perf_counter()
         final_state: AgentState | None = None
         interrupted = False
@@ -306,6 +331,9 @@ async def chat_stream(
         state = final_state if final_state is not None else initial
 
         if interrupted:
+            if _persistence_enabled():
+                with contextlib.suppress(Exception):
+                    await run_in_threadpool(_persist_interrupted, req, user)
             async for chunk in _stream_interrupt(req, state):
                 yield chunk
             return

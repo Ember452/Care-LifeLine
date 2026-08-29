@@ -64,14 +64,20 @@ def test_clinician_reply_persists_and_queue(client: TestClient) -> None:
     assert any(item["session_id"] == "q1" for item in queue.json())
 
 
-def test_hitl_resume_degrades_without_checkpointer(client: TestClient) -> None:
-    # SQLite 无 checkpointer：resume 降级为软 HITL，绝不阻塞。
+def test_hitl_resume_returns_corrected_text_via_sqlite_checkpointer(
+    client: TestClient,
+) -> None:
+    """P1-E：SQLite 也有 checkpointer，interrupt 真暂停 + ``Command(resume)`` 真恢复。"""
     auth = _auth(client, "doctor", "doctor123")
     client.post(
         "/v1/chat/stream",
         json={"session_id": "r1", "message": "我突然胸痛"},
         headers=_auth(client),
     )
+    # interrupt 分支也必须落审核行：工作台队列要能看到该会话。
+    queue = client.get("/v1/hitl/queue", headers=auth)
+    assert queue.status_code == 200
+    assert any(item["session_id"] == "r1" for item in queue.json())
     resp = client.post(
         "/v1/hitl/resume",
         json={"session_id": "r1", "decision": "approve", "corrected_text": "请立即就医"},
@@ -79,6 +85,11 @@ def test_hitl_resume_degrades_without_checkpointer(client: TestClient) -> None:
     )
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+    # 真恢复：医生修正文本经 hitl 节点回到 draft，并经 responder 补齐免责声明，
+    # 而不是降级路径的简单回显。
+    final = resp.json()["final"]
+    assert final.startswith("请立即就医")
+    assert "免责" in final
 
 
 def test_patient_denied_hitl(client: TestClient) -> None:

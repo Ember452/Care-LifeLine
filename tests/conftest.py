@@ -1,8 +1,21 @@
-"""测试全局隔离约定。"""
+"""P1-E 测试隔离：每个用例前后清空 checkpointer 单例。
+
+checkpointer 持有指向各用例临时 SQLite 的连接，若跨用例残留会把
+checkpoint 写进上一用例的数据库、并让 interrupt 状态跨线程泄漏。
+"""
 
 from __future__ import annotations
 
 import pytest
+
+from care_lifeline.graph.checkpointer import reset_checkpointer_for_testing
+
+
+@pytest.fixture(autouse=True)
+def _reset_checkpointer():
+    reset_checkpointer_for_testing()
+    yield
+    reset_checkpointer_for_testing()
 
 
 @pytest.fixture(autouse=True)
