@@ -71,3 +71,25 @@ def test_default_lock_path_is_absolute_not_cwd() -> None:
     lock = scheduler_mod.DistributedLock()
     assert lock._path.is_absolute()
     assert str(lock._path) != ".care_proactive_lock"
+
+
+def test_make_lock_falls_back_to_file_when_redis_unavailable(monkeypatch) -> None:
+    """选 redis 但锁初始化失败（如未装 redis 包/连不上配置错误）：回落文件锁并告警。"""
+    from care_lifeline.config import get_settings
+    from care_lifeline.proactive import scheduler as scheduler_mod
+    from care_lifeline.proactive.scheduler import FileLock
+
+    monkeypatch.setenv("CARE_PROACTIVE_LOCK_BACKEND", "redis")
+    get_settings.cache_clear()
+
+    def _boom(self, url, key="care:proactive_lock"):
+        raise RuntimeError("redis unavailable")
+
+    original = scheduler_mod.RedisLock
+    scheduler_mod.RedisLock = _boom  # type: ignore[assignment]
+    try:
+        lock = scheduler_mod.make_lock()
+        assert isinstance(lock, FileLock)
+    finally:
+        scheduler_mod.RedisLock = original
+        get_settings.cache_clear()

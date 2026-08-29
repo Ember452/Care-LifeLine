@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     feedback_data_path: str = "data/eval/feedback_cases.json"
     # 主动触发调度间隔（秒）
     proactive_interval_seconds: int = Field(default=300, gt=10)
+    # 调度互斥锁实现：file（单机）| redis（多主机；需安装 redis 可选依赖）
+    proactive_lock_backend: Literal["file", "redis"] = "file"
+    redis_url: str = "redis://localhost:6379/0"
     # 单会话 token 预算护栏（§10.4）：累计超过即拒绝新请求；0 = 不限额。
     session_token_budget: int = Field(default=0, ge=0)
 
