@@ -116,6 +116,22 @@ CREATE TABLE IF NOT EXISTS patient_followups (
 );
 CREATE INDEX IF NOT EXISTS ix_patient_followups_patient ON patient_followups(patient_id);
 
+CREATE TABLE IF NOT EXISTS memory_proposals (
+    id            SERIAL PRIMARY KEY,
+    patient_id    INTEGER NOT NULL REFERENCES patients(id),
+    thread_id     VARCHAR(64),
+    kind          VARCHAR(16) NOT NULL,
+    action        VARCHAR(16) NOT NULL DEFAULT 'add',
+    payload       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    excerpt       TEXT,
+    status        VARCHAR(16) NOT NULL DEFAULT 'pending',
+    decided_by    VARCHAR(64),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    decided_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS ix_memory_proposals_patient ON memory_proposals(patient_id);
+CREATE INDEX IF NOT EXISTS ix_memory_proposals_status ON memory_proposals(status);
+
 CREATE TABLE IF NOT EXISTS hitl_reviews (
     id              SERIAL PRIMARY KEY,
     session_id      INTEGER NOT NULL REFERENCES sessions(id),

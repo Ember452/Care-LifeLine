@@ -153,6 +153,28 @@ class PatientAllergy(Base, MemoryProvenanceMixin):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class MemoryProposal(Base):
+    """会话抽取的记忆变更提议——写入必须经人工确认（ADR-0019）。
+
+    LLM 从对话中抽取候选变更后先落本表（pending），确认时才以
+    ``provenance=extracted`` 写入正式记忆表；驳回仅记录决策。
+    """
+
+    __tablename__ = "memory_proposals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
+    thread_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16))  # medication | allergy | followup
+    action: Mapped[str] = mapped_column(String(16), default="add")  # add | stop
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    decided_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class PatientFollowUp(Base, MemoryProvenanceMixin):
     """随访计划（任务型记忆：用 status 表达生命周期，溯源字段同质）。"""
 

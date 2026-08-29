@@ -9,6 +9,7 @@ import HomePage from '@/pages/HomePage'
 import ChatPage from '@/pages/ChatPage'
 import ReportPage from '@/pages/ReportPage'
 import ChronicPage from '@/pages/ChronicPage'
+import MemoryPage from '@/pages/MemoryPage'
 import WorkbenchPage from '@/pages/WorkbenchPage'
 import AdminPage from '@/pages/AdminPage'
 import SettingsPage from '@/pages/SettingsPage'
@@ -66,6 +67,7 @@ export const router = createBrowserRouter([
       { path: 'chat', element: withSuspense(<ChatPage />) },
       { path: 'report', element: withSuspense(<ReportPage />) },
       { path: 'chronic', element: withSuspense(<ChronicPage />) },
+      { path: 'memory', element: withSuspense(<MemoryPage />) },
       {
         path: 'workbench',
         element: (

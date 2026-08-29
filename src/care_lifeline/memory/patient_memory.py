@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from care_lifeline.db.engine import get_sessionmaker
 from care_lifeline.db.models import (
+    MemoryProposal,
     Patient,
     PatientAllergy,
     PatientFollowUp,
@@ -324,3 +325,144 @@ def structured_summary(patient_id: int) -> str:
         ]
         sections.append("待办随访：" + "、".join(parts))
     return "；".join(sections)
+
+
+# ---------------------------------------------------------------------------
+# 记忆提议-确认流：会话抽取的候选变更，写入必须经人工确认（ADR-0019）
+# ---------------------------------------------------------------------------
+
+
+def _payload_name(payload: dict) -> str:
+    return str(payload.get("name") or payload.get("allergen") or payload.get("plan") or "")
+
+
+def create_proposal(
+    patient_id: int,
+    kind: str,
+    action: str,
+    payload: dict,
+    thread_id: str | None = None,
+    excerpt: str | None = None,
+) -> MemoryProposal | None:
+    """落一条待确认记忆提议；同患者同内容的 pending 提议已存在时跳过去重。"""
+    ensure_patient(patient_id)
+    maker = get_sessionmaker()
+    with maker() as session:
+        from sqlalchemy import select
+
+        existing = session.scalars(
+            select(MemoryProposal).where(
+                MemoryProposal.patient_id == patient_id,
+                MemoryProposal.kind == kind,
+                MemoryProposal.action == action,
+                MemoryProposal.status == "pending",
+            )
+        ).all()
+        name = _payload_name(payload)
+        for row in existing:
+            if _payload_name(row.payload) == name:
+                return None
+        proposal = MemoryProposal(
+            patient_id=patient_id,
+            thread_id=thread_id,
+            kind=kind,
+            action=action,
+            payload=payload,
+            excerpt=excerpt,
+        )
+        session.add(proposal)
+        session.commit()
+        session.refresh(proposal)
+        return proposal
+
+
+def list_proposals(patient_id: int, pending_only: bool = True) -> list[MemoryProposal]:
+    """列出记忆提议；``pending_only`` 只返回待确认。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        stmt = select(MemoryProposal).where(MemoryProposal.patient_id == patient_id)
+        if pending_only:
+            stmt = stmt.where(MemoryProposal.status == "pending")
+        return list(session.scalars(stmt.order_by(MemoryProposal.id.desc())).all())
+
+
+def _apply_proposal(proposal: MemoryProposal) -> str:
+    """把已确认的提议应用到正式记忆表，返回应用结果描述。
+
+    一律以 ``provenance="extracted"`` 落库；stop 按药名匹配当前有效记录。
+    """
+    payload = proposal.payload or {}
+    name = _payload_name(payload)
+    if proposal.kind == "medication":
+        if proposal.action == "stop":
+            current = [
+                m for m in list_medications(proposal.patient_id, active_only=True)
+                if m.name == name
+            ]
+            if not current:
+                return f"未找到在用药物「{name}」，未做变更"
+            stop_medication(current[0].id)
+            return f"已停用「{name}」"
+        append_medication(proposal.patient_id, name, provenance="extracted")
+        return f"已记录用药「{name}」"
+    if proposal.kind == "allergy":
+        append_allergy(proposal.patient_id, name, provenance="extracted")
+        return f"已记录过敏「{name}」"
+    add_followup(proposal.patient_id, name, provenance="extracted")
+    return f"已添加随访「{name}」"
+
+
+def confirm_proposal(proposal_id: int, decided_by: str) -> dict:
+    """确认提议：应用到正式记忆表并写审计；不存在或非 pending 抛 ValueError。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        proposal = session.get(MemoryProposal, proposal_id)
+        if proposal is None or proposal.status != "pending":
+            raise ValueError(f"提议 {proposal_id} 不存在或已处理")
+        applied = _apply_proposal(proposal)
+        proposal.status = "confirmed"
+        proposal.decided_by = decided_by
+        proposal.decided_at = datetime.now()
+        session.commit()
+        session.refresh(proposal)
+
+        from care_lifeline.db import session_store
+
+        session_row = (
+            session_store.get_session_by_thread_id(proposal.thread_id)
+            if proposal.thread_id
+            else None
+        )
+        session_store.write_audit(
+            session_row.id if session_row is not None else None,
+            "memory_proposal_confirmed",
+            f"{decided_by}:{proposal.kind}/{proposal.action}:{applied}",
+        )
+        return {"id": proposal.id, "status": proposal.status, "applied": applied}
+
+
+def reject_proposal(proposal_id: int, decided_by: str) -> dict:
+    """驳回提议（仅记录决策，不写任何记忆）；不存在或非 pending 抛 ValueError。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        proposal = session.get(MemoryProposal, proposal_id)
+        if proposal is None or proposal.status != "pending":
+            raise ValueError(f"提议 {proposal_id} 不存在或已处理")
+        proposal.status = "rejected"
+        proposal.decided_by = decided_by
+        proposal.decided_at = datetime.now()
+        session.commit()
+
+        from care_lifeline.db import session_store
+
+        session_row = (
+            session_store.get_session_by_thread_id(proposal.thread_id)
+            if proposal.thread_id
+            else None
+        )
+        session_store.write_audit(
+            session_row.id if session_row is not None else None,
+            "memory_proposal_rejected",
+            f"{decided_by}:{proposal.kind}/{proposal.action}",
+        )
+        return {"id": proposal.id, "status": proposal.status}

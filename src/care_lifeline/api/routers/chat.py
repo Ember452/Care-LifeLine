@@ -195,6 +195,35 @@ def _persist(session_id: str, user_id: int, user_message: str, state: AgentState
         )
 
 
+def _propose_memory(thread_id: str, patient_id: int, message: str, provider) -> None:
+    """从本轮对话抽取候选记忆变更，落 pending 提议（写入必须人工确认）。"""
+    from care_lifeline.memory.extractor import extract_proposals
+    from care_lifeline.memory.patient_memory import create_proposal
+
+    drafts = extract_proposals(message, provider)
+    if not drafts:
+        return
+    created = 0
+    for draft in drafts:
+        proposal = create_proposal(
+            patient_id,
+            draft.kind,
+            draft.action,
+            draft.payload,
+            thread_id=thread_id,
+            excerpt=draft.excerpt,
+        )
+        if proposal is not None:
+            created += 1
+    if created:
+        session = session_store.get_session_by_thread_id(thread_id)
+        session_store.write_audit(
+            session.id if session is not None else None,
+            "memory_proposed",
+            f"count={created}",
+        )
+
+
 def _meta_data(req: ChatRequest, state: AgentState) -> dict:
     scope = state.get("scope_result")
     return {
@@ -405,6 +434,13 @@ async def chat_stream(
         if _persistence_enabled():
             with contextlib.suppress(Exception):
                 await run_in_threadpool(_persist, req.session_id, user.user_id, req.message, state)
+            # 记忆提议（ADR-0019）：从对话抽取候选变更，落 pending 提议等人工确认。
+            # best-effort：抽取失败不影响对话本身。
+            if req.patient_id:
+                with contextlib.suppress(Exception):
+                    await run_in_threadpool(
+                        _propose_memory, req.session_id, req.patient_id, req.message, provider
+                    )
 
         if qc is not None and qc.status == "hitl":
             display = (

@@ -7,6 +7,7 @@ import {
   IconUserGroup,
   IconApps,
   IconSettings,
+  IconRecord,
 } from '@arco-design/web-react/icon'
 import type { Role } from '@/types/contract'
 
@@ -24,6 +25,7 @@ export const navItems: NavItem[] = [
   { key: 'chat', label: '智能问诊', path: '/chat', icon: IconMessage },
   { key: 'report', label: '报告解读', path: '/report', icon: IconFile },
   { key: 'chronic', label: '慢病管理', path: '/chronic', icon: IconDashboard },
+  { key: 'memory', label: '健康档案', path: '/memory', icon: IconRecord },
   { key: 'workbench', label: '医生工作台', path: '/workbench', icon: IconUserGroup, roles: ['clinician', 'admin'] },
   { key: 'admin', label: '管理后台', path: '/admin', icon: IconApps, roles: ['admin'] },
   { key: 'settings', label: '设置', path: '/settings', icon: IconSettings },

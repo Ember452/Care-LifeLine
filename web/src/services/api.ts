@@ -102,6 +102,81 @@ export const patientApi = {
     asArray(await http.get<Reminder[]>(`/patients/${patientId}/reminders`, { silent: true })),
 }
 
+/* --------------------------- 7.4b 患者健康档案（记忆） ---------------------------- */
+
+export interface MemoryItem {
+  id: number
+  name?: string
+  allergen?: string
+  plan?: string
+  dosage?: string | null
+  frequency?: string | null
+  reaction?: string | null
+  severity?: string
+  due_date?: string | null
+  valid_from?: string
+  valid_to?: string | null
+  status?: string
+  provenance: string
+}
+
+export interface MemoryProposalItem {
+  id: number
+  kind: string
+  action: string
+  payload: Record<string, string>
+  excerpt?: string | null
+  status: string
+}
+
+export const memoryApi = {
+  medications: async (patientId: string | number, includeHistory = false) =>
+    asArray(
+      await http.get<MemoryItem[]>(
+        `/patients/${patientId}/medications?include_history=${includeHistory}`,
+        { silent: true },
+      ),
+    ),
+  addMedication: (
+    patientId: string | number,
+    body: { name: string; dosage?: string; frequency?: string },
+  ) => http.post<MemoryItem>(`/patients/${patientId}/medications`, body),
+  stopMedication: (patientId: string | number, id: number) =>
+    http.del<{ ok: boolean }>(`/patients/${patientId}/medications/${id}`),
+  allergies: async (patientId: string | number, includeHistory = false) =>
+    asArray(
+      await http.get<MemoryItem[]>(
+        `/patients/${patientId}/allergies?include_history=${includeHistory}`,
+        { silent: true },
+      ),
+    ),
+  addAllergy: (
+    patientId: string | number,
+    body: { allergen: string; reaction?: string; severity?: string },
+  ) => http.post<MemoryItem>(`/patients/${patientId}/allergies`, body),
+  deactivateAllergy: (patientId: string | number, id: number) =>
+    http.del<{ ok: boolean }>(`/patients/${patientId}/allergies/${id}`),
+  followups: async (patientId: string | number) =>
+    asArray(await http.get<MemoryItem[]>(`/patients/${patientId}/followups`, { silent: true })),
+  addFollowup: (patientId: string | number, body: { plan: string; due_date?: string }) =>
+    http.post<MemoryItem>(`/patients/${patientId}/followups`, body),
+  completeFollowup: (patientId: string | number, id: number) =>
+    http.post<{ ok: boolean }>(`/patients/${patientId}/followups/${id}/complete`),
+  proposals: async (patientId: string | number) =>
+    asArray(
+      await http.get<MemoryProposalItem[]>(
+        `/patients/${patientId}/memory-proposals`,
+        { silent: true },
+      ),
+    ),
+  confirmProposal: (patientId: string | number, id: number) =>
+    http.post<{ ok: boolean; applied: string }>(
+      `/patients/${patientId}/memory-proposals/${id}/confirm`,
+    ),
+  rejectProposal: (patientId: string | number, id: number) =>
+    http.post<{ ok: boolean }>(`/patients/${patientId}/memory-proposals/${id}/reject`),
+}
+
 /* ------------------------------ 7.5 医生工作台 ----------------------------- */
 
 export const workbenchApi = {

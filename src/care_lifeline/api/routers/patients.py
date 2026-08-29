@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -307,3 +307,62 @@ def complete_followup(
     patient_id: int, followup_id: int, user: CurrentUser = Depends(get_current_user)
 ) -> dict:
     return {"ok": patient_memory.complete_followup(followup_id)}
+
+
+# ---------------------------------------------------------------------------
+# 记忆提议-确认流（ADR-0019）：会话抽取的候选变更，写入必须经人工确认
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{patient_id}/memory-proposals", response_model=list[dict])
+def proposal_list(
+    patient_id: int,
+    pending_only: bool = True,
+    user: CurrentUser = Depends(get_current_user),
+) -> list[dict]:
+    """记忆提议列表（默认待确认）；含对话原句依据与溯源。"""
+    return [
+        {
+            "id": p.id,
+            "kind": p.kind,
+            "action": p.action,
+            "payload": p.payload,
+            "excerpt": p.excerpt,
+            "thread_id": p.thread_id,
+            "status": p.status,
+            "decided_by": p.decided_by,
+        }
+        for p in patient_memory.list_proposals(patient_id, pending_only=pending_only)
+    ]
+
+
+@router.post("/{patient_id}/memory-proposals/{proposal_id}/confirm", response_model=dict)
+def confirm_proposal(
+    patient_id: int,
+    proposal_id: int,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """确认提议：以 provenance=extracted 写入正式记忆表并写审计。"""
+    try:
+        return patient_memory.confirm_proposal(proposal_id, user.username)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": str(exc)},
+        ) from exc
+
+
+@router.post("/{patient_id}/memory-proposals/{proposal_id}/reject", response_model=dict)
+def reject_proposal(
+    patient_id: int,
+    proposal_id: int,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """驳回提议：仅记录决策，不写任何记忆。"""
+    try:
+        return patient_memory.reject_proposal(proposal_id, user.username)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": str(exc)},
+        ) from exc

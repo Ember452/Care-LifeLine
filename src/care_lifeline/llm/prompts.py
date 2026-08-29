@@ -107,6 +107,24 @@ unsupported_claims 在全部支持时为空数组。
 {citations}
 """
 
+MEMORY_EXTRACT_PROMPT = """\
+你是健康记忆抽取器。从患者对话中抽取**患者明确陈述**的记忆变更候选，
+只输出 JSON 数组，不输出解释文本。
+
+## 抽取规则
+- 只抽取患者明确说出的：用药变化（开始/停用）、过敏、随访安排。
+- 不确定的、推测的、医生说的、助手说的，一律不抽取。
+- 没有可抽取内容时输出 []。
+
+## 输出格式（数组，可为空）
+[{{"kind": "medication", "action": "add", "name": "布洛芬", "excerpt": "我开始服用布洛芬了"}}]
+- kind：medication（action 为 add/stop）| allergy（字段 allergen）| followup（字段 plan）
+- excerpt 必须是对话原句。
+
+## 对话
+{dialogue}
+"""
+
 QC_REVIEW_PROMPT = """\
 你是医疗 AI 回复的质控评审员。请严格按评分细则为「待评审回复」打分，只输出 JSON，不输出解释文本。
 
