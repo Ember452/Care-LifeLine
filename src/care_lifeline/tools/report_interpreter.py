@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
 
 from care_lifeline.graph.state import Citation, ReportField, ReportResult
 from care_lifeline.tools.rag.reranker import Reranker
 from care_lifeline.tools.rag.retriever import Retriever
+
+logger = logging.getLogger(__name__)
 
 
 class ReportInterpreter(ABC):
@@ -140,6 +143,11 @@ class LLMReportInterpreter(ReportInterpreter):
             data = json.loads(self._provider.complete(messages=prompt))
             fields = [ReportField(**item) for item in data.get("fields", [])]
         except (json.JSONDecodeError, TypeError, ValueError):
+            # 不吞异常：记录后再降级到确定性解析，避免静默失败难排查（P2-H）。
+            logger.warning(
+                "report_interpreter_llm_parse_failed",
+                extra={"error_type": "json_parse", "text_length": len(text)},
+            )
             return MockReportInterpreter().interpret(text, retriever, reranker)
         citations = MockReportInterpreter()._citations(text, retriever, reranker)
         return ReportResult(fields=fields, citations=citations)

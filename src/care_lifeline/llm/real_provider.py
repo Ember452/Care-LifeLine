@@ -56,12 +56,17 @@ class RealProvider:
     def complete(
         self, *, messages: list[dict], temperature: float = 0.2, tier: ModelTier = "strong"
     ) -> str:
-        response = self._client(tier).invoke(_to_lc_messages(messages))
+        # temperature 入参生效（P2-G）：默认 0.2，调用方可按场景覆盖。
+        response = (
+            self._client(tier).bind(temperature=temperature).invoke(_to_lc_messages(messages))
+        )
         return str(response.content)
 
     def stream(
         self, *, messages: list[dict], temperature: float = 0.2, tier: ModelTier = "strong"
     ) -> Iterator[str]:
-        for chunk in self._client(tier).stream(_to_lc_messages(messages)):
+        for chunk in (
+            self._client(tier).bind(temperature=temperature).stream(_to_lc_messages(messages))
+        ):
             if chunk.content:
                 yield str(chunk.content)
