@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 
 from care_lifeline.api.security import hash_password, verify_password
 from care_lifeline.db.engine import get_sessionmaker
-from care_lifeline.db.models import AuditLog, HitlReview, Message, QcHit, Session, User
+from care_lifeline.db.models import AuditLog, HitlReview, Message, QcHit, QcRuleRow, Session, User
 
 
 def _to_langchain_message(row: Message):
@@ -52,7 +52,7 @@ def append_message(
         return row
 
 
-def record_qc_hits(session_id: int, message_id: int, hits: list[QcHit]) -> None:
+def record_qc_hits(session_id: int, message_id: int | None, hits: list[QcHit]) -> None:
     if not hits:
         return
     maker = get_sessionmaker()
@@ -69,6 +69,48 @@ def write_audit(session_id: int | None, event: str, detail: str | None = None) -
     with maker() as session:
         session.add(AuditLog(session_id=session_id, event=event, detail=detail))
         session.commit()
+
+
+def sync_qc_rules(defs: list[dict]) -> dict[str, bool]:
+    """把规则定义同步进 ``qc_rules`` 表，返回 ``{code: enabled}``（P1-D）。
+
+    首次调用为每条规则建行（默认启用）；已有行只更新元数据，**保留运维
+    改过的启停状态**。规则定义本体在 ``safety/rules_engine``，本表只存开关。
+    """
+    maker = get_sessionmaker()
+    with maker() as session:
+        existing = {row.code: row for row in session.execute(select(QcRuleRow)).scalars()}
+        for definition in defs:
+            row = existing.get(definition["code"])
+            if row is None:
+                session.add(
+                    QcRuleRow(
+                        code=definition["code"],
+                        description=definition["description"],
+                        severity=definition["severity"],
+                        version=definition.get("version", 1),
+                        enabled=True,
+                    )
+                )
+            else:
+                row.description = definition["description"]
+                row.severity = definition["severity"]
+                row.version = definition.get("version", 1)
+        session.commit()
+        rows = session.execute(select(QcRuleRow)).scalars().all()
+        return {row.code: bool(row.enabled) for row in rows}
+
+
+def set_qc_rule_enabled(code: str, enabled: bool) -> bool:
+    """落库单条规则的启停开关；返回是否命中已有行。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        row = session.execute(select(QcRuleRow).where(QcRuleRow.code == code)).scalar_one_or_none()
+        if row is None:
+            return False
+        row.enabled = enabled
+        session.commit()
+        return True
 
 
 def list_sessions(user_id: int | None = None) -> list[Session]:

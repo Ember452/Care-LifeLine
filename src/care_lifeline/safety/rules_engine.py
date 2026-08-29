@@ -205,8 +205,31 @@ def evaluate_all(rules: list[QualityRule], draft: str, ctx: dict[str, object]) -
 _ENABLED: dict[str, bool] = {rule.code: True for rule in _rule_defs(CURRENT_RULESET_VERSION)}
 
 
+def rule_definitions() -> list[dict]:
+    """导出当前版本全部规则定义（供持久化层建行/同步元数据）。"""
+    return [
+        {
+            "code": rule.code,
+            "description": rule.description,
+            "severity": rule.severity.value,
+            "version": CURRENT_RULESET_VERSION,
+        }
+        for rule in _rule_defs(CURRENT_RULESET_VERSION)
+    ]
+
+
+def apply_rule_states(states: dict[str, bool]) -> None:
+    """用持久化层加载的启停状态覆盖进程内开关（启动时调用，P1-D）。
+
+    未出现在 ``states`` 中的规则保持默认（启用）。
+    """
+    for code, enabled in states.items():
+        if code in _ENABLED:
+            _ENABLED[code] = enabled
+
+
 def set_rule_enabled(code: str, enabled: bool) -> None:
-    """启用/停用单条规则（管理后台调用，变更需写审计）。"""
+    """启用/停用单条规则（管理后台调用，变更需写审计并落库）。"""
     _ENABLED[code] = enabled
 
 

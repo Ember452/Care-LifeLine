@@ -166,13 +166,14 @@ def rules(user: Annotated[CurrentUser, Depends(_require_admin)]) -> list[dict]:
 
 @router.put("/rules")
 def toggle_rule(body: RuleToggle, user: Annotated[CurrentUser, Depends(_require_admin)]) -> dict:
-    """启停质控规则；变更必须写审计（P0-5 医疗合规红线）。"""
+    """启停质控规则；变更写审计并落库（P0-5 / P1-D）。"""
     if not any(r["code"] == body.code for r in rules_engine.list_rules()):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "规则不存在"},
         )
     rules_engine.set_rule_enabled(body.code, body.enabled)
+    session_store.set_qc_rule_enabled(body.code, body.enabled)
     session_store.write_audit(
         None,
         "qc_rule_toggled",

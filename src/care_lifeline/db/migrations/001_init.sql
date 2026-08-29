@@ -36,19 +36,13 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS ix_messages_session_id ON messages(session_id);
 
-CREATE TABLE IF NOT EXISTS citations (
-    id            SERIAL PRIMARY KEY,
-    message_id    INTEGER REFERENCES messages(id),
-    source        VARCHAR(255) NOT NULL,
-    snippet       TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS qc_rules (
     id            SERIAL PRIMARY KEY,
     code          VARCHAR(64) NOT NULL UNIQUE,
     description   VARCHAR(255) NOT NULL,
     severity      VARCHAR(32) NOT NULL,
-    version       INTEGER NOT NULL DEFAULT 1
+    version       INTEGER NOT NULL DEFAULT 1,
+    enabled       BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE IF NOT EXISTS qc_hits (

@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -62,16 +63,13 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class CitationRow(Base):
-    __tablename__ = "citations"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    message_id: Mapped[int | None] = mapped_column(ForeignKey("messages.id"), nullable=True)
-    source: Mapped[str] = mapped_column(String(255))
-    snippet: Mapped[str] = mapped_column(Text)
-
-
 class QcRuleRow(Base):
+    """质控规则启停的持久化状态（P1-D：重启与多实例间保持一致）。
+
+    规则定义本体在 ``safety/rules_engine``（代码即规则），本表只保存
+    运维侧的启停开关，避免进程内字典重启即丢。
+    """
+
     __tablename__ = "qc_rules"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -79,6 +77,7 @@ class QcRuleRow(Base):
     description: Mapped[str] = mapped_column(String(255))
     severity: Mapped[str] = mapped_column(String(32))
     version: Mapped[int] = mapped_column(Integer, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class QcHit(Base):

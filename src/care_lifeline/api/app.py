@@ -23,6 +23,7 @@ from care_lifeline.db import session_store
 from care_lifeline.db.engine import init_db
 from care_lifeline.graph.checkpointer import ensure_checkpointer_setup
 from care_lifeline.proactive import scheduler as proactive_scheduler
+from care_lifeline.safety import rules_engine
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,10 @@ async def _startup() -> None:
     with contextlib.suppress(Exception):  # DB may be unavailable in some envs
         init_db()
         session_store.seed_demo_user()
+        # 规则启停落库（P1-D）：定义同步进 qc_rules 表，再用持久化状态
+        # 覆盖进程内开关，保证重启/多实例一致。
+        states = session_store.sync_qc_rules(rules_engine.rule_definitions())
+        rules_engine.apply_rule_states(states)
     await ensure_checkpointer_setup()
     proactive_scheduler.start_scheduler()
 

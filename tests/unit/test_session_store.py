@@ -55,3 +55,25 @@ def test_list_audit_logs_filters_and_paginates(db) -> None:
     assert leaks[0].detail == "type=phone"
     one = session_store.list_audit_logs(limit=1, offset=0)
     assert len(one) == 1
+
+
+def test_qc_rule_sync_and_toggle_persist(db) -> None:
+    """规则启停落库（P1-D）：同步建行、toggle 落库、状态可恢复。"""
+    from care_lifeline.safety import rules_engine
+
+    defs = rules_engine.rule_definitions()
+    assert len(defs) >= 9
+    states = session_store.sync_qc_rules(defs)
+    # 首次同步：全部默认启用
+    assert all(states.values()) is True or set(states.values()) == {True}
+
+    # 落库停用 + 引擎加载
+    assert session_store.set_qc_rule_enabled("off_scope", False) is True
+    assert session_store.set_qc_rule_enabled("no_such_rule", True) is False
+    rules_engine.apply_rule_states(session_store.sync_qc_rules(defs))
+    assert rules_engine.is_rule_enabled("off_scope") is False
+
+    # 再次同步保留运维状态；恢复启用后引擎一致
+    assert session_store.set_qc_rule_enabled("off_scope", True) is True
+    rules_engine.apply_rule_states(session_store.sync_qc_rules(defs))
+    assert rules_engine.is_rule_enabled("off_scope") is True
