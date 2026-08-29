@@ -14,7 +14,7 @@ jobs:
       # 评测仅跑确定性/规则类指标时无需真实 LLM Key；需要 LLM 指标时从 Secrets 注入
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
