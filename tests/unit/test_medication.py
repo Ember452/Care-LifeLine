@@ -9,6 +9,20 @@ def test_extract_drugs_splits_on_common_separators() -> None:
     assert "布洛芬" in drugs
 
 
+def test_extract_drugs_splits_on_conjunctions() -> None:
+    """自然语句「华法林和阿司匹林」必须能检出相互作用。
+
+    连词拆分后 token 可能带尾巴（「阿司匹林能一起吃吗」），
+    check_interactions 用药名前缀匹配兜底——真机回归用例。
+    """
+    agent = MedicationAgent()
+    drugs = agent.extract_drugs("华法林和阿司匹林能一起吃吗")
+    assert "华法林" in drugs
+    hits = agent.check_interactions(drugs)
+    assert len(hits) == 1
+    assert hits[0].severity == "major"
+
+
 def test_check_interactions_finds_known_pair() -> None:
     agent = MedicationAgent()
     hits = agent.check_interactions(["华法林", "阿司匹林"])

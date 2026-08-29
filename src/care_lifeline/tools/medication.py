@@ -125,7 +125,9 @@ _DDI_TABLE: list[DrugInteraction] = [
 class MedicationAgent:
     """用药相互作用审查（P2）。离线知识库基线；生产可接 RxNorm/FDA。"""
 
-    _SEP = re.compile(r"[\s,，、;；/]+")
+    # 分隔符含连词（和/与/跟/同/及）：自然语句「华法林和阿司匹林」必须能拆出药名；
+    # 连词拆出的碎片经 normalize 后不命中 DDI 表即被忽略，无副作用。
+    _SEP = re.compile(r"[\s,，、;；/和与跟同及]+")
 
     @classmethod
     def normalize(cls, drug: str) -> str:
@@ -137,12 +139,23 @@ class MedicationAgent:
         return [t for t in self._SEP.split(text) if t]
 
     def check_interactions(self, drugs: list[str]) -> list[DrugInteraction]:
-        names = {self.normalize(d) for d in drugs if d.strip()}
-        found: list[DrugInteraction] = []
-        for item in _DDI_TABLE:
-            if item.a in names and item.b in names:
-                found.append(item)
-        return found
+        tokens = [d.strip() for d in drugs if d.strip()]
+
+        def mentions(name: str) -> bool:
+            """药名命中：token 全等，或 token 以该药名/其别名开头。
+
+            自然语句拆分后常带尾巴（「阿司匹林能一起吃吗」），前缀匹配
+            覆盖此场景；「非他汀」这类否定前缀不会误命中。
+            """
+            for token in tokens:
+                if token == name or token.startswith(name):
+                    return True
+                for alias, canonical in _ALIAS_MAP.items():
+                    if token.startswith(alias) and canonical == name:
+                        return True
+            return False
+
+        return [item for item in _DDI_TABLE if mentions(item.a) and mentions(item.b)]
 
     def warnings(self, drugs: list[str]) -> list[str]:
         out: list[str] = []
