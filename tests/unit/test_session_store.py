@@ -77,3 +77,24 @@ def test_qc_rule_sync_and_toggle_persist(db) -> None:
     assert session_store.set_qc_rule_enabled("off_scope", True) is True
     rules_engine.apply_rule_states(session_store.sync_qc_rules(defs))
     assert rules_engine.is_rule_enabled("off_scope") is True
+
+
+def test_login_and_register_write_audit(db) -> None:
+    """登录成败与注册均写审计（审计补全）。"""
+    session_store.seed_demo_user()
+    from fastapi.testclient import TestClient
+
+    from care_lifeline.api.app import app
+
+    with TestClient(app) as client:
+        ok = client.post("/v1/auth/login", data={"username": "demo", "password": "demo123"})
+        assert ok.status_code == 200
+        bad = client.post("/v1/auth/login", data={"username": "demo", "password": "wrong"})
+        assert bad.status_code == 401
+        reg = client.post("/v1/auth/register", json={"username": "auditor", "password": "audit123"})
+        assert reg.status_code == 200
+
+    events = [row.event for row in session_store.list_audit_logs(limit=10)]
+    assert "user_login" in events
+    assert "user_login_failed" in events
+    assert "user_registered" in events

@@ -52,10 +52,13 @@ def _issue_token(user) -> TokenResponse:
 def _verify(username: str, password: str) -> TokenResponse:
     user = session_store.verify_user(username, password)
     if user is None:
+        # 登录成败均留痕（P2-I 审计补全）；失败事件不记录密码。
+        session_store.write_audit(None, "user_login_failed", f"username={username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "invalid_credentials", "message": "用户名或密码错误"},
         )
+    session_store.write_audit(None, "user_login", f"username={username}")
     return _issue_token(user)
 
 
@@ -106,6 +109,7 @@ def register(body: RegisterRequest) -> TokenResponse:
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "conflict", "message": "用户名已存在"},
         ) from None
+    session_store.write_audit(None, "user_registered", f"username={body.username}:role={user.role}")
     return _issue_token(user)
 
 
