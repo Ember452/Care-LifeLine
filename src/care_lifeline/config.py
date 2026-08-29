@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     # 单会话 token 预算护栏（§10.4）：累计超过即拒绝新请求；0 = 不限额。
     session_token_budget: int = Field(default=0, ge=0)
+    # 记忆保鲜：在用药物/过敏记录超过该天数未复核则生成复核提醒；0 = 关闭。
+    memory_review_days: int = Field(default=180, ge=0)
     # OCR 引擎：stub（零依赖占位）| rapidocr（需安装 ocr 可选依赖组）
     ocr_engine: Literal["stub", "rapidocr"] = "stub"
     # token 单价（每 1k tokens，货币单位由部署方定义）；默认 0 = 不估算成本

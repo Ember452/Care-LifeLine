@@ -141,14 +141,29 @@ def list_patient_ids() -> list[int]:
 
 
 def append_medication(
-    patient_id: int, name: str, dosage: str | None = None, frequency: str | None = None
+    patient_id: int,
+    name: str,
+    dosage: str | None = None,
+    frequency: str | None = None,
+    provenance: str = "user",
+    source_session_id: int | None = None,
 ) -> PatientMedication:
-    """新增一条在用药物记录（默认 active）。"""
+    """新增一条用药记录（双时间轴：valid_from=now，valid_to=NULL 表示当前有效）。
+
+    Args:
+        provenance: 溯源（user 患者自述 | clinician 医生录入 | extracted 会话抽取）。
+        source_session_id: 记忆来源会话（管理界面溯源展示用）。
+    """
     ensure_patient(patient_id)
     maker = get_sessionmaker()
     with maker() as session:
         row = PatientMedication(
-            patient_id=patient_id, name=name, dosage=dosage, frequency=frequency
+            patient_id=patient_id,
+            name=name,
+            dosage=dosage,
+            frequency=frequency,
+            provenance=provenance,
+            source_session_id=source_session_id,
         )
         session.add(row)
         session.commit()
@@ -156,37 +171,54 @@ def append_medication(
         return row
 
 
-def list_medications(patient_id: int, active_only: bool = True) -> list[PatientMedication]:
-    """列出用药记录；``active_only`` 只返回在用药物。"""
+def list_medications(
+    patient_id: int, active_only: bool = True, include_history: bool = False
+) -> list[PatientMedication]:
+    """列出用药记录。
+
+    Args:
+        active_only: 只返回当前有效（``valid_to IS NULL``）的记录；
+        include_history: 连同已失效的历史切片一起返回（管理界面/追溯用）。
+    """
     maker = get_sessionmaker()
     with maker() as session:
         stmt = select(PatientMedication).where(PatientMedication.patient_id == patient_id)
-        if active_only:
-            stmt = stmt.where(PatientMedication.status == "active")
+        if active_only and not include_history:
+            stmt = stmt.where(PatientMedication.valid_to.is_(None))
         return list(session.scalars(stmt.order_by(PatientMedication.id)).all())
 
 
 def stop_medication(medication_id: int) -> bool:
-    """把用药记录标记为 stopped；不存在返回 ``False``。"""
+    """停药：关闭 ``valid_to``（失效不删行，历史保留可追溯）；不存在或已失效返回 ``False``。"""
     maker = get_sessionmaker()
     with maker() as session:
         row = session.get(PatientMedication, medication_id)
-        if row is None:
+        if row is None or row.valid_to is not None:
             return False
-        row.status = "stopped"
+        row.valid_to = datetime.now()
         session.commit()
         return True
 
 
 def append_allergy(
-    patient_id: int, allergen: str, reaction: str | None = None, severity: str = "moderate"
+    patient_id: int,
+    allergen: str,
+    reaction: str | None = None,
+    severity: str = "moderate",
+    provenance: str = "user",
+    source_session_id: int | None = None,
 ) -> PatientAllergy:
-    """新增一条过敏记录。"""
+    """新增一条过敏记录（双时间轴语义同用药史）。"""
     ensure_patient(patient_id)
     maker = get_sessionmaker()
     with maker() as session:
         row = PatientAllergy(
-            patient_id=patient_id, allergen=allergen, reaction=reaction, severity=severity
+            patient_id=patient_id,
+            allergen=allergen,
+            reaction=reaction,
+            severity=severity,
+            provenance=provenance,
+            source_session_id=source_session_id,
         )
         session.add(row)
         session.commit()
@@ -194,25 +226,46 @@ def append_allergy(
         return row
 
 
-def list_allergies(patient_id: int) -> list[PatientAllergy]:
-    """列出全部过敏记录。"""
+def deactivate_allergy(allergy_id: int) -> bool:
+    """过敏记录失效（误报/已脱敏）；不存在或已失效返回 ``False``。"""
     maker = get_sessionmaker()
     with maker() as session:
-        return list(
-            session.scalars(
-                select(PatientAllergy)
-                .where(PatientAllergy.patient_id == patient_id)
-                .order_by(PatientAllergy.id)
-            ).all()
-        )
+        row = session.get(PatientAllergy, allergy_id)
+        if row is None or row.valid_to is not None:
+            return False
+        row.valid_to = datetime.now()
+        session.commit()
+        return True
 
 
-def add_followup(patient_id: int, plan: str, due_date: datetime | None = None) -> PatientFollowUp:
+def list_allergies(patient_id: int, active_only: bool = True) -> list[PatientAllergy]:
+    """列出过敏记录；``active_only`` 只返回当前有效。"""
+    maker = get_sessionmaker()
+    with maker() as session:
+        stmt = select(PatientAllergy).where(PatientAllergy.patient_id == patient_id)
+        if active_only:
+            stmt = stmt.where(PatientAllergy.valid_to.is_(None))
+        return list(session.scalars(stmt.order_by(PatientAllergy.id)).all())
+
+
+def add_followup(
+    patient_id: int,
+    plan: str,
+    due_date: datetime | None = None,
+    provenance: str = "user",
+    source_session_id: int | None = None,
+) -> PatientFollowUp:
     """新增一条随访计划（默认 pending）。"""
     ensure_patient(patient_id)
     maker = get_sessionmaker()
     with maker() as session:
-        row = PatientFollowUp(patient_id=patient_id, plan=plan, due_date=due_date)
+        row = PatientFollowUp(
+            patient_id=patient_id,
+            plan=plan,
+            due_date=due_date,
+            provenance=provenance,
+            source_session_id=source_session_id,
+        )
         session.add(row)
         session.commit()
         session.refresh(row)
@@ -244,6 +297,8 @@ def complete_followup(followup_id: int) -> bool:
 def structured_summary(patient_id: int) -> str:
     """把用药/过敏/随访拼成注入分诊上下文的摘要文本；全空返回空串。
 
+    只取**当前有效**切片（``valid_to IS NULL`` / 未完成任务）——失效的历史
+    疗程不进分诊上下文，但保留在库中可追溯（ADR-0018 双时间轴）。
     只含结构化脱敏字段（不含自由文本长期留存），符合文档 §7.4 隐私边界。
     """
     sections: list[str] = []

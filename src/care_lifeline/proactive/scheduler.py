@@ -12,7 +12,7 @@ from typing import Protocol
 
 from care_lifeline.config import get_settings
 from care_lifeline.memory import patient_memory
-from care_lifeline.proactive.trigger import Reminder, evaluate
+from care_lifeline.proactive.trigger import Reminder, evaluate, memory_staleness_reminders
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +141,10 @@ def run_once() -> dict[int, list[Reminder]]:
     try:
         snapshot: dict[int, list[Reminder]] = {}
         for patient_id in patient_memory.list_patient_ids():
-            snapshot[patient_id] = evaluate(patient_id)
+            reminders = evaluate(patient_id)
+            # 记忆保鲜（ADR-0018）：超龄在用药物/过敏记录生成复核提醒。
+            reminders.extend(memory_staleness_reminders(patient_id))
+            snapshot[patient_id] = reminders
         _LATEST = snapshot
         # P2-F：落库 replace，重启与多实例不再依赖进程内存。
         from care_lifeline.db import session_store

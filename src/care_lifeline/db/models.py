@@ -116,8 +116,18 @@ class PatientMetric(Base):
     measured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class PatientMedication(Base):
-    """结构化用药史（文档 §7.4：跨会话仅保留结构化脱敏字段）。"""
+class MemoryProvenanceMixin:
+    """记忆条目的溯源与双时间轴字段（双时间轴：SCD-2，失效不删行）。"""
+
+    # user 患者自述 | clinician 医生录入 | extracted 会话抽取
+    provenance: Mapped[str] = mapped_column(String(16), default="user")
+    source_session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id"), nullable=True)
+    valid_from: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class PatientMedication(Base, MemoryProvenanceMixin):
+    """结构化用药史（文档 §7.4）。停药 = 关闭 valid_to，历史保留可追溯。"""
 
     __tablename__ = "patient_medications"
 
@@ -126,12 +136,11 @@ class PatientMedication(Base):
     name: Mapped[str] = mapped_column(String(64))
     dosage: Mapped[str | None] = mapped_column(String(64), nullable=True)
     frequency: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    status: Mapped[str] = mapped_column(String(16), default="active")  # active | stopped
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class PatientAllergy(Base):
-    """过敏史（分诊安全关键上下文）。"""
+class PatientAllergy(Base, MemoryProvenanceMixin):
+    """过敏史（分诊安全关键上下文）；误报/已脱敏通过关闭 valid_to 失效。"""
 
     __tablename__ = "patient_allergies"
 
@@ -144,8 +153,8 @@ class PatientAllergy(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class PatientFollowUp(Base):
-    """随访计划。"""
+class PatientFollowUp(Base, MemoryProvenanceMixin):
+    """随访计划（任务型记忆：用 status 表达生命周期，溯源字段同质）。"""
 
     __tablename__ = "patient_followups"
 

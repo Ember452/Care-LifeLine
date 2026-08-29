@@ -1,5 +1,7 @@
 -- Care-LifeLine M2 初始化建表（Postgres）
 -- 由 `make compose-up` 起 Postgres 后执行；CI/本地测试用 SQLite 走 db.engine.init_db 自动建表。
+-- schema v3（2026-08-29）：纵向记忆三表加双时间轴（valid_from/valid_to）与溯源
+-- （provenance/source_session_id，ADR-0018）；已有旧库需重建（dev 为种子数据可重生成）。
 
 CREATE TABLE IF NOT EXISTS users (
     id            SERIAL PRIMARY KEY,
@@ -73,33 +75,44 @@ CREATE TABLE IF NOT EXISTS patient_metrics (
 CREATE INDEX IF NOT EXISTS ix_patient_metrics_patient ON patient_metrics(patient_id);
 
 CREATE TABLE IF NOT EXISTS patient_medications (
-    id            SERIAL PRIMARY KEY,
-    patient_id    INTEGER NOT NULL REFERENCES patients(id),
-    name          VARCHAR(64) NOT NULL,
-    dosage        VARCHAR(64),
-    frequency     VARCHAR(64),
-    status        VARCHAR(16) NOT NULL DEFAULT 'active',
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                 SERIAL PRIMARY KEY,
+    patient_id         INTEGER NOT NULL REFERENCES patients(id),
+    name               VARCHAR(64) NOT NULL,
+    dosage             VARCHAR(64),
+    frequency          VARCHAR(64),
+    provenance         VARCHAR(16) NOT NULL DEFAULT 'user',
+    source_session_id  INTEGER REFERENCES sessions(id),
+    valid_from         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    valid_to           TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_patient_medications_patient ON patient_medications(patient_id);
 
 CREATE TABLE IF NOT EXISTS patient_allergies (
-    id            SERIAL PRIMARY KEY,
-    patient_id    INTEGER NOT NULL REFERENCES patients(id),
-    allergen      VARCHAR(64) NOT NULL,
-    reaction      VARCHAR(128),
-    severity      VARCHAR(16) NOT NULL DEFAULT 'moderate',
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                 SERIAL PRIMARY KEY,
+    patient_id         INTEGER NOT NULL REFERENCES patients(id),
+    allergen           VARCHAR(64) NOT NULL,
+    reaction           VARCHAR(128),
+    severity           VARCHAR(16) NOT NULL DEFAULT 'moderate',
+    provenance         VARCHAR(16) NOT NULL DEFAULT 'user',
+    source_session_id  INTEGER REFERENCES sessions(id),
+    valid_from         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    valid_to           TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_patient_allergies_patient ON patient_allergies(patient_id);
 
 CREATE TABLE IF NOT EXISTS patient_followups (
-    id            SERIAL PRIMARY KEY,
-    patient_id    INTEGER NOT NULL REFERENCES patients(id),
-    plan          VARCHAR(255) NOT NULL,
-    due_date      TIMESTAMPTZ,
-    status        VARCHAR(16) NOT NULL DEFAULT 'pending',
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                 SERIAL PRIMARY KEY,
+    patient_id         INTEGER NOT NULL REFERENCES patients(id),
+    plan               VARCHAR(255) NOT NULL,
+    due_date           TIMESTAMPTZ,
+    status             VARCHAR(16) NOT NULL DEFAULT 'pending',
+    provenance         VARCHAR(16) NOT NULL DEFAULT 'user',
+    source_session_id  INTEGER REFERENCES sessions(id),
+    valid_from         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    valid_to           TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_patient_followups_patient ON patient_followups(patient_id);
 

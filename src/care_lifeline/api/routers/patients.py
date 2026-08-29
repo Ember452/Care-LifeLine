@@ -149,46 +149,68 @@ class MedicationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     dosage: str | None = Field(default=None, max_length=64)
     frequency: str | None = Field(default=None, max_length=64)
+    # 溯源：user 患者自述 | clinician 医生录入 | extracted 会话抽取
+    provenance: str = Field(default="user", pattern="^(user|clinician|extracted)$")
+    source_session_id: int | None = None
 
 
 class AllergyCreate(BaseModel):
     allergen: str = Field(min_length=1, max_length=64)
     reaction: str | None = Field(default=None, max_length=128)
     severity: str = Field(default="moderate", pattern="^(mild|moderate|severe)$")
+    provenance: str = Field(default="user", pattern="^(user|clinician|extracted)$")
+    source_session_id: int | None = None
 
 
 class FollowUpCreate(BaseModel):
     plan: str = Field(min_length=1, max_length=255)
     due_date: datetime | None = None
+    provenance: str = Field(default="user", pattern="^(user|clinician|extracted)$")
+    source_session_id: int | None = None
 
 
 @router.post("/{patient_id}/medications", response_model=dict)
 def add_medication(
     patient_id: int, body: MedicationCreate, user: CurrentUser = Depends(get_current_user)
 ) -> dict:
-    row = patient_memory.append_medication(patient_id, body.name, body.dosage, body.frequency)
+    row = patient_memory.append_medication(
+        patient_id,
+        body.name,
+        body.dosage,
+        body.frequency,
+        provenance=body.provenance,
+        source_session_id=body.source_session_id,
+    )
     return {
         "id": row.id,
         "name": row.name,
         "dosage": row.dosage,
         "frequency": row.frequency,
-        "status": row.status,
+        "valid_to": str(row.valid_to) if row.valid_to else None,
+        "provenance": row.provenance,
     }
 
 
 @router.get("/{patient_id}/medications", response_model=list[dict])
 def medication_list(
-    patient_id: int, user: CurrentUser = Depends(get_current_user)
+    patient_id: int,
+    include_history: bool = False,
+    user: CurrentUser = Depends(get_current_user),
 ) -> list[dict]:
+    """用药列表；``include_history`` 连同已停用（失效）切片一起返回。"""
     return [
         {
             "id": m.id,
             "name": m.name,
             "dosage": m.dosage,
             "frequency": m.frequency,
-            "status": m.status,
+            "valid_from": str(m.valid_from),
+            "valid_to": str(m.valid_to) if m.valid_to else None,
+            "provenance": m.provenance,
         }
-        for m in patient_memory.list_medications(patient_id, active_only=False)
+        for m in patient_memory.list_medications(
+            patient_id, active_only=not include_history, include_history=include_history
+        )
     ]
 
 
@@ -196,6 +218,7 @@ def medication_list(
 def stop_medication(
     patient_id: int, medication_id: int, user: CurrentUser = Depends(get_current_user)
 ) -> dict:
+    """停药：关闭 valid_to（失效不删行），历史保留可追溯。"""
     return {"ok": patient_memory.stop_medication(medication_id)}
 
 
@@ -203,28 +226,61 @@ def stop_medication(
 def add_allergy(
     patient_id: int, body: AllergyCreate, user: CurrentUser = Depends(get_current_user)
 ) -> dict:
-    row = patient_memory.append_allergy(patient_id, body.allergen, body.reaction, body.severity)
+    row = patient_memory.append_allergy(
+        patient_id,
+        body.allergen,
+        body.reaction,
+        body.severity,
+        provenance=body.provenance,
+        source_session_id=body.source_session_id,
+    )
     return {
         "id": row.id,
         "allergen": row.allergen,
         "reaction": row.reaction,
         "severity": row.severity,
+        "provenance": row.provenance,
     }
 
 
 @router.get("/{patient_id}/allergies", response_model=list[dict])
-def allergy_list(patient_id: int, user: CurrentUser = Depends(get_current_user)) -> list[dict]:
+def allergy_list(
+    patient_id: int,
+    include_history: bool = False,
+    user: CurrentUser = Depends(get_current_user),
+) -> list[dict]:
     return [
-        {"id": a.id, "allergen": a.allergen, "reaction": a.reaction, "severity": a.severity}
-        for a in patient_memory.list_allergies(patient_id)
+        {
+            "id": a.id,
+            "allergen": a.allergen,
+            "reaction": a.reaction,
+            "severity": a.severity,
+            "provenance": a.provenance,
+            "valid_to": str(a.valid_to) if a.valid_to else None,
+        }
+        for a in patient_memory.list_allergies(patient_id, active_only=not include_history)
     ]
+
+
+@router.delete("/{patient_id}/allergies/{allergy_id}", response_model=dict)
+def deactivate_allergy(
+    patient_id: int, allergy_id: int, user: CurrentUser = Depends(get_current_user)
+) -> dict:
+    """过敏记录失效（误报/已脱敏）：关闭 valid_to，历史保留。"""
+    return {"ok": patient_memory.deactivate_allergy(allergy_id)}
 
 
 @router.post("/{patient_id}/followups", response_model=dict)
 def add_followup(
     patient_id: int, body: FollowUpCreate, user: CurrentUser = Depends(get_current_user)
 ) -> dict:
-    row = patient_memory.add_followup(patient_id, body.plan, body.due_date)
+    row = patient_memory.add_followup(
+        patient_id,
+        body.plan,
+        body.due_date,
+        provenance=body.provenance,
+        source_session_id=body.source_session_id,
+    )
     return {
         "id": row.id,
         "plan": row.plan,

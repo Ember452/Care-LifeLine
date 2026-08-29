@@ -31,11 +31,14 @@ def _headers(client: TestClient) -> dict:
 def test_medication_crud_roundtrip(client: TestClient) -> None:
     h = _headers(client)
     created = client.post(
-        "/v1/patients/1/medications", json={"name": "华法林", "dosage": "2.5mg"}, headers=h
+        "/v1/patients/1/medications",
+        json={"name": "华法林", "dosage": "2.5mg", "provenance": "clinician"},
+        headers=h,
     )
     assert created.status_code == 200
     body = created.json()
-    assert body["status"] == "active"
+    assert body["valid_to"] is None  # 当前有效
+    assert body["provenance"] == "clinician"
 
     listed = client.get("/v1/patients/1/medications", headers=h)
     assert listed.status_code == 200
@@ -46,8 +49,13 @@ def test_medication_crud_roundtrip(client: TestClient) -> None:
     )
     assert stopped.status_code == 200
     assert stopped.json() == {"ok": True}
+    # 默认只出当前有效切片：停用后不再返回
     after = client.get("/v1/patients/1/medications", headers=h).json()
-    assert after[0]["status"] == "stopped"
+    assert after == []
+    # include_history 连同失效切片返回，且 valid_to 已关闭
+    history = client.get("/v1/patients/1/medications?include_history=true", headers=h).json()
+    assert len(history) == 1
+    assert history[0]["valid_to"] is not None
 
 
 def test_allergy_and_followup_roundtrip(client: TestClient) -> None:
