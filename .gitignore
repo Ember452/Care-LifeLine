@@ -48,3 +48,5 @@ eval_report.md
 
 # 主动触发调度锁文件
 .care_proactive_lock
+care.db-shm
+care.db-wal
