@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     qdrant_api_key: str = ""
     rag_collection: str = "care_guidelines"
     rag_enabled: bool = False
+    # 数据飞轮反馈集路径：测试必须重定向到临时目录，避免污染真实评测数据。
+    feedback_data_path: str = "data/eval/feedback_cases.json"
     # 主动触发调度间隔（秒）
     proactive_interval_seconds: int = Field(default=300, gt=10)
 
